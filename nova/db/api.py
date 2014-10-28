@@ -35,6 +35,9 @@ from nova.i18n import _
 from nova.openstack.common import log as logging
 
 
+from nova.db.discovery import api as discovery_api
+
+
 db_opts = [
     cfg.BoolOpt('enable_new_services',
                 default=True,
@@ -50,10 +53,12 @@ db_opts = [
 CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
-_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
+# _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
+_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db.discovery.api'}
+# _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api', 'discovery': 'nova.db.sqlalchemy.api'}
 
-
-IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
+# IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
+IMPL = discovery_api
 
 LOG = logging.getLogger(__name__)
 

@@ -73,6 +73,9 @@ from nova import utils
 from nova.virt import hardware
 from nova import volume
 
+# DEBUG
+import pydevd
+
 LOG = logging.getLogger(__name__)
 
 get_notifier = functools.partial(rpc.get_notifier, service='compute')
@@ -903,16 +906,18 @@ class API(base.Base):
 
         # In the case of any exceptions, attempt DB cleanup and rollback the
         # quota reservations.
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                try:
-                    for instance in instances:
-                        try:
-                            instance.destroy()
-                        except exception.ObjectActionError:
-                            pass
-                finally:
-                    quotas.rollback()
+        except Exception as e:
+            print("BIG ERROR while provisioning: %s" % (e))
+            pydevd.settrace('172.28.2.139', port=1234, stdoutToServer=True, stderrToServer=True)
+            # with excutils.save_and_reraise_exception():
+            #     try:
+            #         for instance in instances:
+            #             try:
+            #                 instance.destroy()
+            #             except exception.ObjectActionError:
+            #                 pass
+            #     finally:
+            #         quotas.rollback()
 
         # Commit the reservations
         quotas.commit()
