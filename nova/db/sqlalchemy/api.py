@@ -63,7 +63,10 @@ from nova import exception
 from nova.i18n import _, _LI
 from nova.openstack.common import log as logging
 from nova.openstack.common import uuidutils
-from nova import quota
+try:
+    from nova import quota
+except:
+    pass
 
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',

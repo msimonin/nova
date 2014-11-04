@@ -441,7 +441,7 @@ class NovaBase(models.SoftDeleteMixin,
         fetched = myBucket.get(table_name)
         keys = fetched.data if fetched.data != None else []
         
-        current_key = 0
+        current_key = 1
         while current_key in keys:
             current_key += 1
 
@@ -464,15 +464,15 @@ class NovaBase(models.SoftDeleteMixin,
     def soft_delete(self, session):
 
         # MYSQL
-        """Mark this object as deleted."""
-        try:
-            self.deleted = self.id
-            self.deleted_at = timeutils.utcnow()
-            self.save(session=session)
-            session.flush()
-        except:
-            print("[MYSQL] Error while deleting %s" % (self))
-            pass
+        # """Mark this object as deleted."""
+        # try:
+        #     self.deleted = self.id
+        #     self.deleted_at = timeutils.utcnow()
+        #     self.save(session=session)
+        #     session.flush()
+        # except:
+        #     print("[MYSQL] Error while deleting %s" % (self))
+        #     pass
 
         myBucket = dbClient.bucket(self.__tablename__)
 
@@ -489,19 +489,24 @@ class NovaBase(models.SoftDeleteMixin,
 
         self.remove_from_key_index(self.id)
 
+    # def update(self, session=None):
+    #     super(NovaBase, self).update(session=session)
+    #     self.updated_at.timeutils.utcnow()
+    #     self.save(session)
+
     def save(self, session=None):
     
         # MYSQL
-        try:
-            from nova.db.sqlalchemy import api
+        # try:
+        #     from nova.db.sqlalchemy import api
 
-            if session is None:
-                session = api.get_session()
+        #     if session is None:
+        #         session = api.get_session()
 
-            super(NovaBase, self).save(session=session)
-        except:
-            print("[MYSQL] Error while saving %s" % (self))
-            pass
+        #     super(NovaBase, self).save(session=session)
+        # except:
+        #     print("[MYSQL] Error while saving %s" % (self))
+        #     pass
             
         # RIAK
 
@@ -569,7 +574,10 @@ class NovaBase(models.SoftDeleteMixin,
                 current_object = merge_dict(existing_object, current_object)
 
             object_simplifier_datetime = BetterFlatObjectSimplifier()
-            current_object["updated_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
+
+            if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
+                current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
+            # current_object["updated_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
 
             print(">>>>>>>>>>>>>> storing in %s: {%s}" %(table_name, current_object["id"]))
             print(current_object)

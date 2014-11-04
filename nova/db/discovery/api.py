@@ -251,7 +251,7 @@ def convert_to_camelcase(word):
 
 def find_table_name(model):
 
-    """This function return the name of the given model as a String. If the
+    """This function returns the name of the given model as a String. If the
     model cannot be identified, it returns "none".
     :param model: a model object candidate
     :return: the table name or "none" if the object cannot be identified
@@ -308,30 +308,32 @@ class ObjectDesimplifier:
             return None
 
     def update_foreign_keys(self, obj):
-        metadata = obj.metadata
-        tablename = find_table_name(obj)
 
-        if metadata and tablename in metadata.tables:
-            for fk in metadata.tables[tablename].foreign_keys:
-                local_field_name = str(fk.parent).split(".")[-1]
-                remote_table_name = fk._colspec.split(".")[-2]
-                remote_field_name = fk._colspec.split(".")[-1]
+        if hasattr(obj, "metadata"):
+            metadata = obj.metadata
+            tablename = find_table_name(obj)
 
-                if hasattr(obj, remote_table_name):
-                    pass
-                else:
-                    # remove the "s" at the end of the tablename
-                    remote_table_name = remote_table_name[:-1]
-                    pass
+            if metadata and tablename in metadata.tables:
+                for fk in metadata.tables[tablename].foreign_keys:
+                    local_field_name = str(fk.parent).split(".")[-1]
+                    remote_table_name = fk._colspec.split(".")[-2]
+                    remote_field_name = fk._colspec.split(".")[-1]
 
-                try:
-                    remote_object = getattr(obj, remote_table_name)
-                    remote_field_value = getattr(remote_object, remote_field_name)
-                    setattr(obj, local_field_name, remote_field_value)
-                except Exception as e:
-                    traceback.print_exc()
-                    print("echec(%s) with %s: %s <- %s.%s" % (e, obj, local_field_name, remote_table_name, remote_field_name))
-                    pass
+                    if hasattr(obj, remote_table_name):
+                        pass
+                    else:
+                        """ remove the "s" at the end of the tablename """
+                        remote_table_name = remote_table_name[:-1]
+                        pass
+
+                    try:
+                        remote_object = getattr(obj, remote_table_name)
+                        remote_field_value = getattr(remote_object, remote_field_name)
+                        setattr(obj, local_field_name, remote_field_value)
+                    except Exception as e:
+                        traceback.print_exc()
+                        print("echec(%s) with %s: %s <- %s.%s" % (e, obj, local_field_name, remote_table_name, remote_field_name))
+                        pass
 
 
     def update_nova_model(self, obj):
@@ -359,7 +361,7 @@ class ObjectDesimplifier:
             current_model.project_id = obj["project_id"]
 
         """ Update foreign keys """
-        # self.update_foreign_keys(current_model)
+        self.update_foreign_keys(current_model)
 
         return current_model
 
@@ -408,6 +410,8 @@ class ObjectDesimplifier:
             result = self.update_nova_model(obj)
 
 
+        """ Update foreign keys """
+        self.update_foreign_keys(result)
 
         # print("desimplify(%s) -> %s" % (obj, result))
         return result
@@ -806,6 +810,9 @@ class RiakModelQuery:
 
     def evaluate_criterion(self, criterion, value):
 
+        def uncapitalize(str):
+            return s[:1].lower() + s[1:] if s else ''
+
         def getattr_rec(obj, attr, otherwise=None):
             """ A reccursive getattr function.
 
@@ -820,7 +827,15 @@ class RiakModelQuery:
                 else:
                     current_key = attr[:attr.index(".")]
                     next_key = attr[attr.index(".") + 1:]
-                    current_object = getattr(obj, current_key)
+                    if hasattr(obj, current_key):
+                        current_object = getattr(obj, current_key)
+                    elif hasattr(obj, current_key.capitalize()):
+                        current_object = getattr(obj, current_key.capitalize())
+                    elif hasattr(obj, uncapitalize(current_key)):
+                        current_object = getattr(obj, uncapitalize(current_key))
+                    else:                        
+                        current_object = getattr(obj, current_key)
+
                     return getattr_rec(current_object, next_key, otherwise)
             except AttributeError:
                     return otherwise
@@ -829,31 +844,46 @@ class RiakModelQuery:
 
         if "=" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    return False
                 return "%s" %(a) == "%s" %(b)
             op = "="
 
         if "IS" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    if a is None and b is None:
+                        return True
+                    else:
+                        return False
                 return a is b
             op = "IS"
 
         if "!=" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    return False
                 return a is not b
             op = "!="
 
         if "<" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    return False
                 return a < b
             op = "<"
 
         if ">" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    return False
                 return a > b
             op = ">"
 
         if "IN" in criterion_str:
             def comparator (a, b):
+                if a is None or b is None:
+                    return False
                 return a == b
             op = "IN"
 
@@ -862,11 +892,14 @@ class RiakModelQuery:
         right = split[1].strip()
         left_values = []
 
+        # Computing left value
         if left.startswith(":"):
             left_values += [criterion._orig[0].effective_value]
         else:
             left_values += [getattr_rec(value, left.capitalize())]
 
+
+        # Computing right value
         if right.startswith(":"):
             right_value = criterion._orig[1].effective_value
         else:
@@ -887,6 +920,12 @@ class RiakModelQuery:
                         right_value = False
                 else:
                     right_value = getattr_rec(value, right.capitalize())
+
+        # try:
+        #     print(">>> (%s)[%s] = %s <-> %s" % (value.keys(), left, left_values, right))
+        # except:
+        #     pass
+
         result = False
         for left_value in left_values:
                 
@@ -904,6 +943,12 @@ class RiakModelQuery:
         if op == "IN":
             result = False
             right_terms = set(criterion.right.element)
+
+            if left_value is None and hasattr(value, "__iter__"):
+                left_key = left.split(".")[-1]
+                if value[0].has_key(left_key):
+                    left_value = value[0][left_key]
+
             for right_term in right_terms:
                 try:
                     right_value = getattr(right_term.value, "%s" % (right_term._orig_key))
@@ -950,6 +995,34 @@ class RiakModelQuery:
 
     def soft_delete(self, synchronize_session=False):
         return self
+
+    def update(self, values, synchronize_session='evaluate'):
+        rows = self.all()
+        for row in rows:
+            tablename = find_table_name(row)
+            id = row.id
+
+            print("[DEBUG-UPDATE] I shall update %s@%s with %s" % (str(id), tablename, values))
+
+            object_bucket = dbClient.bucket(tablename)
+
+            key_as_string = "%d" % (id)
+            data = object_bucket.get(key_as_string).data
+
+            for key in values:
+                data[key] = values[key]
+
+            object_desimplifier = ObjectDesimplifier()
+            
+            try:
+                desimplified_object = object_desimplifier.desimplify(data)
+                desimplified_object.save()
+            except Exception as e:
+                traceback.print_exc()
+                print("[DEBUG-UPDATE] could not save %s@%s" % (str(id), tablename))
+                return None
+
+        return len(rows)
 
     ####################################################################################################################
     # Query construction
@@ -1235,8 +1308,10 @@ def service_get(context, service_id, with_compute_node=False,
 def service_get_all(context, disabled=None):
     query = model_query(context, models.Service)
 
-    if disabled is not None:
-        query = query.filter_by(disabled=disabled)
+    # TODO: commented following as it was a source of probleme with RIAK 
+    # implementation.
+    # if disabled is not None:
+    #     query = query.filter_by(disabled=disabled)
 
     return query.all()
 
@@ -2590,8 +2665,9 @@ def _instances_fill_metadata(context, instances,
 
     sys_meta = collections.defaultdict(list)
     if 'system_metadata' in manual_joins:
-        for row in _instance_system_metadata_get_multi(context, uuids,
-                                                       use_slave=use_slave):
+        kiki = _instance_system_metadata_get_multi(context, uuids)
+        print(">> %s" % (uuids))
+        for row in _instance_system_metadata_get_multi(context, uuids):
             sys_meta[row['instance_uuid']].append(row)
 
     pcidevs = collections.defaultdict(list)
@@ -2602,7 +2678,7 @@ def _instances_fill_metadata(context, instances,
     filled_instances = []
     for inst in instances:
         inst = dict(inst.iteritems())
-        inst['system_metadata'] = sys_meta[inst['uuid']]
+        # inst['system_metadata'] = sys_meta[inst['uuid']]
         inst['metadata'] = meta[inst['uuid']]
         if 'pci_devices' in manual_joins:
             inst['pci_devices'] = pcidevs[inst['uuid']]
@@ -2979,11 +3055,10 @@ def _instance_get_all_query(context, project_only=False,
 def instance_get_all_by_host(context, host,
                              columns_to_join=None,
                              use_slave=False):
-    return _instances_fill_metadata(context,
-      _instance_get_all_query(context,
-                              use_slave=use_slave).filter_by(host=host).all(),
-                              manual_joins=columns_to_join,
-                              use_slave=use_slave)
+    instances = _instance_get_all_query(context,
+                              use_slave=use_slave).filter_by(host=host).all()
+    print(">> %s" % (instances))
+    return _instances_fill_metadata(context, instances, ["system_metadata"])
 
 
 def _instance_get_all_uuids_by_host(context, host, session=None):

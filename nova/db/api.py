@@ -34,7 +34,7 @@ from nova.cells import rpcapi as cells_rpcapi
 from nova.i18n import _
 from nova.openstack.common import log as logging
 
-
+from nova.db.sqlalchemy import api as mysql_api
 from nova.db.discovery import api as discovery_api
 
 
@@ -53,12 +53,81 @@ db_opts = [
 CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
+
+class ObjectComparator:
+
+    """Class that enables a "visual" comparison between two objects (<a> and <b>): when a developer wants to test if some
+    methods of <a> differs from some methodes of <b>, this class can be used. """
+
+    def __init__(self, a, b, label_a, label_b, return_first=True):
+        self.a = a
+        self.b = b
+        self.label_a = label_a
+        self.label_b = label_b
+        self.return_first = return_first
+
+    def __getattr__(self, attr):
+
+        ret_a = getattr(self.a, attr)
+        ret_b = getattr(self.b, attr)
+
+        if hasattr(ret_a, "__call__") and hasattr(ret_b, "__call__"):
+            callable_object = self.FunctionWrapper(ret_a, ret_b, attr, self.label_a, self.label_b, self.return_first)
+            return callable_object
+        return ret_a
+
+    class FunctionWrapper:
+
+        """Class that is used to "simulate" the call to a functions on two objects: it enables to measure the difference
+        between the two implementations. This class will target the creation of runnable objects."""
+
+        def __init__(self, callable_a, callable_b, call_name, label_a, label_b, return_first):
+            # print("##create a function wrapper")
+            self.callable_a = callable_a
+            self.callable_b = callable_b
+            self.call_name = call_name
+            self.label_a = label_a
+            self.label_b = label_b
+            self.return_first = return_first
+
+        def __call__(self, *args, **kwargs):
+
+            result_callable_a = self.callable_a(*args, **kwargs)
+            result_callable_b = self.callable_b(*args, **kwargs)
+
+            pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
+            pretty_print_callable_b = "%s.%s => [%s]" % (self.label_b, self.call_name, str(result_callable_b))
+            
+            print(pretty_print_callable_a)
+            print(pretty_print_callable_b)
+
+            fo = open("/home/jonathan/devstack/db_api.log", "a")
+
+            fo.write(pretty_print_callable_a+"\n")
+            fo.write(pretty_print_callable_b+"\n")
+            fo.write("\n")
+
+            fo.close()
+
+            if self.return_first:
+                return result_callable_a
+            else:
+                return result_callable_b
+
 # _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db.discovery.api'}
 # _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api', 'discovery': 'nova.db.sqlalchemy.api'}
 
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
-IMPL = discovery_api
+# IMPL = discovery_api
+
+IMPL = ObjectComparator(mysql_api, discovery_api, "MySQL_impl", "Discovery_impl", False)
+
+class DualImpl:
+    def __init__(self):
+        self.mysql_api = mysql_api
+        self.discovery_api = discovery_api
+
 
 LOG = logging.getLogger(__name__)
 
