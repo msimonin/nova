@@ -32,6 +32,9 @@ from nova.db.sqlalchemy import types
 
 # RIAK
 import riak
+from simplifier import ObjectSimplifier
+import traceback
+# from desimplifier import ObjectDesimplifier
 
 CONF = cfg.CONF
 BASE = declarative_base()
@@ -43,343 +46,6 @@ def get_model_class_from_name(name):
     # model = globals()[name.capitalize()]
     model = eval(name)
     return model
-
-class RelationshipIdentifier:
-    def __init__(self, tablename, field_name, field_id):
-        self._tablename = tablename
-        self._field_name = field_name
-        self._field_id = field_id
-
-class ObjectSimplifier:
-
-    def novabase_simplify(self, novabase_ref):
-        obj = {"simplify_strategy": "novabase", "tablename": novabase_ref.__tablename__, "id": novabase_ref.id}
-        return obj
-
-    def datetime_simplify(self, datetime_ref):
-        obj = {"simplify_strategy": "datetime", "value": datetime_ref.strftime('%b %d %Y %H:%M:%S'), "timezone" : str(datetime_ref.tzinfo)}
-        return obj
-
-    def ipnetwork_simplify(self, ipnetwork):
-        obj = {"simplify_strategy": "ipnetwork", "value": str(ipnetwork)}
-        return obj
-
-    def relationship_simplify(self, relationship, id_value):
-        obj = {"simplify_strategy": "novabase", "tablename": relationship._tablename, "id": id_value,
-               "value": id_value}
-        return obj
-
-    def simplify(self, obj, skip_novabase=True):
-
-        result = obj
-        do_deep_simplification = False
-        is_basic_type = False
-
-        if isinstance(obj, NovaBase) and not skip_novabase:
-            result = self.novabase_simplify(obj)
-        elif obj.__class__.__name__ == "datetime":
-            result = self.datetime_simplify(obj)
-        elif obj.__class__.__name__ == "IPNetwork":
-            result = self.ipnetwork_simplify(obj)
-        else:
-            try:
-                if hasattr(obj, "__dict__") or obj.__class__.__name__ == "dict":
-                    do_deep_simplification = True
-            except:
-                is_basic_type = True
-                pass
-
-
-            if do_deep_simplification and not is_basic_type:
-                fields = {}
-
-                fields_to_iterate = None
-                if hasattr(obj, "__dict__"):
-                    fields_to_iterate = obj.__dict__
-                if obj.__class__.__name__ == "dict":
-                    fields_to_iterate = obj
-
-                # Add relations here
-                for field in obj._sa_class_manager:
-                    if not str(field) in fields_to_iterate:
-                        tablename = str(obj._sa_class_manager[field].prop.table)
-                        local_field_name = obj._sa_class_manager[field].prop._lazy_strategy.key
-                        local_field_id = next(iter(obj._sa_class_manager[field].prop._calculated_foreign_keys)).key
-                        fields_to_iterate[str(field)] = RelationshipIdentifier(tablename, local_field_name, local_field_id)
-
-                # if fields_to_iterate is not None:
-                #     # for field in [x for x in fields_to_iterate if not x.startswith('_') and x != 'metadata']:
-                #     for field in [x for x in fields_to_iterate if not x.startswith('_') and x != 'metadata']:
-                #         field_value = fields_to_iterate[field]
-                #         fields[field] = self.simplify(field_value, False)
-                #     result = fields
-
-                if fields_to_iterate is not None:
-                    for field in [x for x in fields_to_iterate if not x.startswith('_') and x != 'metadata']:
-                        field_value = fields_to_iterate[field]
-
-                        if isinstance(field_value, list):
-                            copy_list = []
-                            for item in field_value:
-                                copy_list += [self.simplify(item, False)]
-                            fields[field] = copy_list
-                        elif isinstance(field_value, RelationshipIdentifier):
-                            fields[field] = self.relationship_simplify(field_value, getattr(obj, field_value._field_id))
-                        else:
-                            fields[field] = self.simplify(field_value, False)
-                    result = fields
-
-        return result
-
-def already_processed_novabase(refs, novabase_ref):
-        tablename = novabase_ref.__tablename__
-        id = novabase_ref.id
-
-        for simplified_novabase_object in refs:
-            if (simplified_novabase_object["simplify_strategy"] == "novabase") \
-                    and (simplified_novabase_object["tablename"] == tablename) \
-                    and (simplified_novabase_object["id"] == id):
-                return True
-        return False
-
-class FlatObjectSimplifier(ObjectSimplifier):
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.novabase_objects_to_cache = []
-        self.simplified_novabase_objects_to_cache = []
-
-    def already_processed_novabase(self, novabase_ref):
-        return already_processed_novabase(self.simplified_novabase_objects_to_cache, novabase_ref)
-
-
-    def novabase_simplify(self, novabase_ref):
-
-        def process_field(field_value):
-            if not self.already_processed_novabase(field_value):
-                self.simplify(field_value, False)
-
-        simplified_object = ObjectSimplifier.novabase_simplify(self, novabase_ref)
-        self.simplified_novabase_objects_to_cache += [simplified_object]
-        self.novabase_objects_to_cache += [novabase_ref]
-        self.novabase_objects_to_cache = list(set(self.novabase_objects_to_cache))
-
-        fields_to_iterate = None
-        if hasattr(novabase_ref, "__dict__"):
-            fields_to_iterate = novabase_ref.__dict__
-        if novabase_ref.__class__.__name__ == "dict":
-            fields_to_iterate = novabase_ref
-
-        if fields_to_iterate is not None:
-            for field in fields_to_iterate:
-                field_value = fields_to_iterate[field]
-
-                if isinstance(field_value, NovaBase):
-                    process_field(field_value)
-                if isinstance(field_value, list):
-                    for item in field_value:
-                        process_field(item)
-
-        return simplified_object
-
-    def simplify(self, obj, skip_novabase=False):
-        result = ObjectSimplifier.simplify(self, obj, skip_novabase)
-        if skip_novabase and obj in self.novabase_objects_to_cache:
-            self.novabase_objects_to_cache.remove(obj)
-        return result
-
-def extract_adress(obj):
-    result = hex(id(obj))
-    try:
-        if isinstance(obj, NovaBase):
-            result = str(obj).split("at ")[1].split(">")[0]
-    except:
-        pass
-    return result
-
-class BetterFlatObjectSimplifier(ObjectSimplifier):
-
-    simplified_processed_objects = {}
-
-    def __init__(self):
-        self.reset()
-
-    def already_processed(self, novabase_ref):
-        key = "%s-%s" % (novabase_ref.__tablename__, novabase_ref.id)
-        if novabase_ref.id == None:
-            key = "%s-%s" % (novabase_ref.__tablename__, extract_adress(novabase_ref))
-        return self.simplified_processed_objects.has_key(key)
-
-    def _novabase_simplify(self, novabase_ref):
-        key = "%s-%s" % (novabase_ref.__tablename__, novabase_ref.id)
-        if novabase_ref.id == None:
-            key = "%s-%s" % (novabase_ref.__tablename__, extract_adress(novabase_ref))
-        if self.simplified_processed_objects.has_key(key):
-            obj = self.simplified_processed_objects[key]
-        else:
-            # obj = {"simplify_strategy": "novabase", "tablename": novabase_ref.__tablename__, "id": novabase_ref.id, "value": novabase_ref}
-            novabase_classname = str(novabase_ref.__class__.__name__)
-            if isinstance(novabase_ref, dict) and "novabase_classname" in novabase_ref:
-                novabase_classname = novabase_ref["novabase_classname"]
-            obj = {"simplify_strategy": "novabase", "tablename": novabase_ref.__tablename__, "novabase_classname": str(novabase_ref.__class__.__name__) ,"id": novabase_ref.id, "pid": extract_adress(novabase_ref)}
-            if hasattr(novabase_ref, "user_id"):
-                obj["user_id"] = novabase_ref.user_id
-            if hasattr(novabase_ref, "project_id"):
-                obj["project_id"] = novabase_ref.project_id
-            if not key in self.simplified_processed_objects:
-                self.simplified_processed_objects[key] = obj
-        return obj
-
-    def relationship_simplify(self, relationship, id_value):
-        obj = {"simplify_strategy": "novabase", "tablename": relationship._tablename, "id": id_value,
-               "value": id_value}
-        return obj
-
-    def _simplify_current_object(self, obj, skip_reccursive_call=True):
-
-        result = obj
-        do_deep_simplification = False
-        is_basic_type = False
-
-        if isinstance(obj, NovaBase) and (self.already_processed(obj) or skip_reccursive_call):
-            result = self.novabase_simplify(obj)
-        elif obj.__class__.__name__ == "datetime":
-            result = self.datetime_simplify(obj)
-        elif obj.__class__.__name__ == "IPNetwork":
-            result = self.ipnetwork_simplify(obj)
-        else:
-            try:
-                if hasattr(obj, "__dict__") or obj.__class__.__name__ == "dict":
-                    do_deep_simplification = True
-            except:
-                is_basic_type = True
-                pass
-
-            if do_deep_simplification and not is_basic_type:
-                fields = {}
-
-                # TODO: find a way to remove this hack
-                if str(obj.__class__.__name__) != "dict":
-                    fields["novabase_classname"] = str(obj.__class__.__name__)
-
-                # Initialize fields to iterate
-                fields_to_iterate = None
-                if hasattr(obj, "__dict__"):
-                    fields_to_iterate = obj.__dict__
-                if obj.__class__.__name__ == "dict":
-                    fields_to_iterate = obj
-
-                # Add relations fields in fields_to_iterate
-                try:
-                    for field in obj._sa_class_manager:
-                        if not str(field) in fields_to_iterate:
-                            tablename = str(obj._sa_class_manager[field].prop.table)
-                            local_field_name = obj._sa_class_manager[field].prop._lazy_strategy.key
-                            local_field_id = next(iter(obj._sa_class_manager[field].prop._calculated_foreign_keys)).key
-                            fields_to_iterate[str(field)] = RelationshipIdentifier(tablename, local_field_name, local_field_id)
-                except:
-                    pass
-
-                # Process the fields and make reccursive calls
-                if fields_to_iterate is not None:
-                    for field in [x for x in fields_to_iterate if not x.startswith('_') and x != 'metadata']:
-                        field_value = fields_to_iterate[field]
-
-                        if isinstance(field_value, list):
-                            copy_list = []
-                            for item in field_value:
-                                copy_list += [self._simplify_current_object(item, True)]
-                            fields[field] = copy_list
-                        elif isinstance(field_value, RelationshipIdentifier):
-                            fields[field] = self.relationship_simplify(field_value, getattr(obj, field_value._field_id))
-                        else:
-                            fields[field] = self._simplify_current_object(field_value, True)
-                    result = fields
-
-                if isinstance(obj, NovaBase):
-                    key = "%s-%s" % (obj.__tablename__, obj.id)
-                    if obj.id == None:
-                        key = "%s-%s" % (obj.__tablename__, extract_adress(novabase_ref))
-                    if not key in self.complex_processed_objects:
-                        self.complex_processed_objects[key] = result
-                        self.simplified_processed_objects[key] = self._novabase_simplify(obj)
-
-        return result
-
-
-    def reset(self):
-
-        self.simplified_processed_objects = {}
-        self.complex_processed_objects = {}
-
-    def already_processed_novabase(self, novabase_ref):
-        return already_processed_novabase(self.simplified_processed_objects, novabase_ref)
-
-
-    def novabase_simplify(self, novabase_ref):
-
-        if not self.already_processed(novabase_ref):
-
-            def process_field(field_value):
-                if not self.already_processed(field_value):
-                    self._simplify_current_object(field_value, False)
-
-                key = "%s-%s" % (field_value.__tablename__, field_value.id)
-                if field_value.id == None:
-                    key = "%s-%s" % (field_value.__tablename__, extract_adress(novabase_ref))
-                return self.simplified_processed_objects[key]
-
-
-            simplified_object = self._novabase_simplify(novabase_ref)
-
-            key = "%s-%s" % (novabase_ref.__tablename__, novabase_ref.id)
-            if novabase_ref.id == None:
-                key = "%s-%s" % (novabase_ref.__tablename__, extract_adress(novabase_ref))
-            if not key in self.simplified_processed_objects:
-                self.simplified_processed_objects[key] = simplified_object
-
-
-            fields_to_iterate = None
-            if hasattr(novabase_ref, "_sa_class_manager"):
-                fields_to_iterate = novabase_ref._sa_class_manager
-            elif hasattr(novabase_ref, "__dict__"):
-                fields_to_iterate = novabase_ref.__dict__
-            elif novabase_ref.__class__.__name__ == "dict":
-                fields_to_iterate = novabase_ref
-
-
-            complex_object = {}
-            if fields_to_iterate is not None:
-                for field in fields_to_iterate:
-                    field_value = getattr(novabase_ref, field)
-
-                    if isinstance(field_value, NovaBase):
-                        complex_object[field] = process_field(field_value)
-                    elif isinstance(field_value, list):
-                        field_list = []
-                        for item in field_value:
-                            field_list += [process_field(item)]
-                        complex_object[field] = field_list
-                    else:
-                        complex_object[field] = field_value
-
-            # print(complex_object)
-            if not key in self.complex_processed_objects:
-                self.complex_processed_objects[key] = complex_object
-            # self.simplify(novabase_ref)
-
-        else:
-            key = "%s-%s" % (novabase_ref.__tablename__, novabase_ref.id)
-            if novabase_ref.id == None:
-                key = "%s-%s" % (novabase_ref.__tablename__, extract_adress(novabase_ref))
-            simplified_object = self.simplified_processed_objects[key]
-
-        return simplified_object
-
-    def simplify(self, obj):
-        result = self._simplify_current_object(obj, False)
-        return result
 
 def MediumText():
     return Text().with_variant(MEDIUMTEXT(), 'mysql')
@@ -494,8 +160,74 @@ class NovaBase(models.SoftDeleteMixin,
     #     self.updated_at.timeutils.utcnow()
     #     self.save(session)
 
+    def update_foreign_keys(self):
+
+        if hasattr(self, "metadata"):
+            metadata = self.metadata
+            tablename = self.__tablename__
+
+            if metadata and tablename in metadata.tables:
+                for fk in metadata.tables[tablename].foreign_keys:
+                    local_field_name = str(fk.parent).split(".")[-1]
+                    remote_table_name = fk._colspec.split(".")[-2]
+                    remote_field_name = fk._colspec.split(".")[-1]
+
+                    if hasattr(self, remote_table_name):
+                        pass
+                    else:
+                        """ remove the "s" at the end of the tablename """
+                        remote_table_name = remote_table_name[:-1]
+                        pass
+
+                    try:
+                        remote_object = getattr(self, remote_table_name)
+                        remote_field_value = getattr(remote_object, remote_field_name)
+                        setattr(self, local_field_name, remote_field_value)
+                    except Exception as e:
+                        traceback.print_exc()
+                        print("echec(%s) with %s: %s <- %s.%s" % (e, self, local_field_name, remote_table_name, remote_field_name))
+                        pass
+
+    def update(self, values, synchronize_session='evaluate'):
+        
+        print("UPDATING with values %s" % (values))
+
+        primitive = (int, str, bool)
+
+        for key in values:
+            value = values[key]
+            print(">> %s[%s] <- %s" % (self.__tablename__, key, value))
+            try:
+                setattr(self, key, value)
+            except Exception as e:
+                print(e)
+                pass
+
+        """Set default values"""
+        try:
+            for field in self._sa_class_manager:
+                instance_state = self._sa_instance_state
+                field_value = getattr(self, field)
+                if field_value is None:
+                    try:
+                        field_column = instance_state.mapper._props[field].columns[0]
+                        field_name = field_column.name
+                        field_default_value = field_column.default.arg
+
+                        if not "function" in str(type(field_default_value)):
+                            setattr(self, field_name, field_default_value)
+                    except:
+                        pass
+        except:
+            pass
+
+        self.update_foreign_keys()
+
+
     def save(self, session=None):
-    
+        
+        self.update_foreign_keys()
+
         # MYSQL
         # try:
         #     from nova.db.sqlalchemy import api
@@ -524,7 +256,7 @@ class NovaBase(models.SoftDeleteMixin,
         # converted into "JSON like" representation, and nested objects are
         # extracted. It results in a list of object that will be stored in the
         # database.
-        object_simplifier = BetterFlatObjectSimplifier()
+        object_simplifier = ObjectSimplifier()
         simplified_object = object_simplifier.simplify(target)
 
         table_next_key_offset = {}
@@ -573,7 +305,7 @@ class NovaBase(models.SoftDeleteMixin,
                 existing_object = myBucket.get(str(current_object["id"])).data
                 current_object = merge_dict(existing_object, current_object)
 
-            object_simplifier_datetime = BetterFlatObjectSimplifier()
+            object_simplifier_datetime = ObjectSimplifier()
 
             if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
                 current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
@@ -584,7 +316,7 @@ class NovaBase(models.SoftDeleteMixin,
 
             
             try:
-                local_object_simplifier = BetterFlatObjectSimplifier()
+                local_object_simplifier = ObjectSimplifier()
                 corrected_object = local_object_simplifier.simplify(current_object)
                 fetched = myBucket.new(str(current_object["id"]), data=corrected_object)
                 fetched.store()
