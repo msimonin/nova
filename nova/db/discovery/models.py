@@ -190,8 +190,6 @@ class NovaBase(models.SoftDeleteMixin,
 
     def update(self, values, synchronize_session='evaluate'):
         
-        print("UPDATING with values %s" % (values))
-
         primitive = (int, str, bool)
 
         for key in values:

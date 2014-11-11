@@ -85,6 +85,8 @@ from sqlalchemy.orm.collections import InstrumentedList
 from nova.db.discovery import models
 import pytz
 from desimplifier import ObjectDesimplifier
+from desimplifier import find_table_name
+
 
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',

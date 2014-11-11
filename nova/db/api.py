@@ -101,7 +101,7 @@ class ObjectComparator:
             print(pretty_print_callable_a)
             print(pretty_print_callable_b)
 
-            fo = open("/home/jonathan/devstack/db_api.log", "a")
+            fo = open("/opt/logs/db_api.log", "a")
 
             fo.write(pretty_print_callable_a+"\n")
             fo.write(pretty_print_callable_b+"\n")
@@ -121,7 +121,7 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = ObjectComparator(mysql_api, discovery_api, "MySQL_impl", "Discovery_impl", False)
+IMPL = ObjectComparator(mysql_api, discovery_api, "[    MySQL_impl]", "[Discovery_impl]", False)
 
 class DualImpl:
     def __init__(self):

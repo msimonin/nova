@@ -101,12 +101,26 @@ class ObjectDesimplifier:
                         pass
 
                     try:
-                        remote_object = getattr(obj, remote_table_name)
-                        remote_field_value = getattr(remote_object, remote_field_name)
-                        setattr(obj, local_field_name, remote_field_value)
+                        if not obj is None:
+                            remote_object = getattr(obj, remote_table_name)
+                            if remote_object is not None:
+                                remote_field_value = getattr(remote_object, remote_field_name)
+                                setattr(obj, local_field_name, remote_field_value)
+                            else:
+                                current_local_value = getattr(obj, local_field_name)
+                                if current_local_value is not None:
+                                    remote_model_name = remote_table_name.capitalize()
+                                    remote_model_class = get_model_class_from_name(remote_model_name)
+                                    # TODO: replace with the good field name and value
+                                    remote_ref = RiakModelQuery(remote_model_class).filter_by(**{remote_field_name: current_local_value}).first()
+                                    setattr(obj, remote_table_name, remote_ref)
+                                    pass
                     except Exception as e:
                         traceback.print_exc()
-                        print("echec(%s) with %s: %s <- %s.%s" % (e, obj, local_field_name, remote_table_name, remote_field_name))
+                        current_local_value = None
+                        if hasattr(obj, local_field_name):
+                            current_local_value = getattr(obj, local_field_name)
+                        print("echec(%s) with %s: %s <- %s.%s; is value setted => %s" % (e, obj, local_field_name, remote_table_name, remote_field_name, current_local_value))
                         pass
 
 
