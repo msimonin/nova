@@ -295,6 +295,8 @@ class NovaBase(models.SoftDeleteMixin,
             print("simplified_object [%s][%s] --> %s" % (table_name, current_object["id"], current_object))
 
             current_object["nova_classname"] = table_name
+            # TODO: check this!
+            # current_object["metadata_novabase_classname"] = str(object_simplifier.complex_processed_objects[key].__class__.__name__)
 
             existing_object = {}
             if not "id" in current_object or current_object["id"] is None:

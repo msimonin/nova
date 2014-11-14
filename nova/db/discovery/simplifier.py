@@ -212,6 +212,10 @@ class ObjectSimplifier():
                         self.complex_processed_objects[key] = result
                         self.simplified_processed_objects[key] = self._novabase_simplify(obj)
 
+                        metadata_class_name = str(obj.__class__.__name__)
+                        self.complex_processed_objects[key]["metadata_novabase_classname"] = metadata_class_name
+                        self.simplified_processed_objects[key]["metadata_novabase_classname"] = metadata_class_name
+
         return result
 
 
@@ -271,10 +275,11 @@ class ObjectSimplifier():
                     else:
                         complex_object[field] = field_value
 
-            # print(complex_object)
+            metadata_class_name = str(novabase_ref.__class__.__name__)
+            complex_object["metadata_novabase_classname"] = metadata_class_name
+
             if not key in self.complex_processed_objects:
                 self.complex_processed_objects[key] = complex_object
-            # self.simplify(novabase_ref)
 
         else:
             key = "%s-%s" % (novabase_ref.__tablename__, novabase_ref.id)

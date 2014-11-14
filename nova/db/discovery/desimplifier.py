@@ -17,7 +17,17 @@ from sqlalchemy.orm.collections import InstrumentedList
 from nova.db.discovery import models
 import pytz
 
+try:
+    from query import RiakModelQuery
+except:
+    pass
+
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
+
+class Context:
+  is_admin = True
+
+context = Context()
 
 def convert_to_camelcase(word):
     return ''.join(x.capitalize() or '_' for x in word.split('_'))
@@ -78,8 +88,48 @@ class ObjectDesimplifier:
 
             return self._simple_to_model_dict[self.get_key(obj)]
 
+        elif "metadata_novabase_classname" in obj:
+            model_class_name = obj["metadata_novabase_classname"]
+            model = get_model_class_from_name(model_class_name)
+
+            model_object = model()
+
+            if not self._simple_to_model_dict.has_key(self.get_key(obj)):
+                self._simple_to_model_dict[self.get_key(obj)] = model_object
+
+            return self._simple_to_model_dict[self.get_key(obj)]
         else:
             return None
+
+    def update_relationship_field(self, target, table_name, foreign_key, remote_field_name, foreign_key_value):
+
+        key_index_bucket = dbClient.bucket("key_index")
+        fetched = key_index_bucket.get(table_name)
+        keys = fetched.data
+
+        result = []
+        if keys != None:
+            for key in keys:
+                try:
+                    key_as_string = "%d" % (key)
+                    
+                    model_object = self.get_single_object(model, key)       
+
+                    if hasattr(model_object, remote_field_name) and getattr(model_object, remote_field_name) == foreign_key_value:
+                        result = result + [model_object]
+
+                except Exception as ex:
+                    print("problem with key: %s" %(key))
+                    traceback.print_exc()
+                    pass
+        
+        if len(result) > 0:
+            first_result = result[0]
+
+            setattr(obj, foreign_key, first_result)
+
+
+        pass
 
     def update_foreign_keys(self, obj):
 
@@ -100,6 +150,7 @@ class ObjectDesimplifier:
                         remote_table_name = remote_table_name[:-1]
                         pass
 
+                    need_to_update_from_remote_object = False
                     try:
                         if not obj is None:
                             remote_object = getattr(obj, remote_table_name)
@@ -107,21 +158,19 @@ class ObjectDesimplifier:
                                 remote_field_value = getattr(remote_object, remote_field_name)
                                 setattr(obj, local_field_name, remote_field_value)
                             else:
-                                current_local_value = getattr(obj, local_field_name)
-                                if current_local_value is not None:
-                                    remote_model_name = remote_table_name.capitalize()
-                                    remote_model_class = get_model_class_from_name(remote_model_name)
-                                    # TODO: replace with the good field name and value
-                                    remote_ref = RiakModelQuery(remote_model_class).filter_by(**{remote_field_name: current_local_value}).first()
-                                    setattr(obj, remote_table_name, remote_ref)
-                                    pass
+                                need_to_update_from_remote_object = True
+
                     except Exception as e:
-                        traceback.print_exc()
+                        need_to_update_from_remote_object = True
                         current_local_value = None
-                        if hasattr(obj, local_field_name):
-                            current_local_value = getattr(obj, local_field_name)
-                        print("echec(%s) with %s: %s <- %s.%s; is value setted => %s" % (e, obj, local_field_name, remote_table_name, remote_field_name, current_local_value))
-                        pass
+
+                    if need_to_update_from_remote_object and hasattr(obj, local_field_name):
+                        current_local_value = getattr(obj, local_field_name)
+                        remote_model_name = "".join([x.capitalize() for x in remote_table_name.split("_")])
+                        remote_model_class = get_model_class_from_name(remote_model_name)
+
+                        self.update_relationship_field(obj, remote_table_name, remote_table_name, remote_field_name, current_local_value)
+
 
 
     def update_nova_model(self, obj):
@@ -203,6 +252,8 @@ class ObjectDesimplifier:
                 list_result += [self.desimplify(item)]
             result = list_result
         elif isinstance(obj, dict) and obj.has_key("novabase_classname"):
+            result = self.update_nova_model(obj)
+        elif isinstance(obj, dict) and obj.has_key("metadata_novabase_classname"):
             result = self.update_nova_model(obj)
 
 

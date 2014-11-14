@@ -121,7 +121,7 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = ObjectComparator(mysql_api, discovery_api, "[    MySQL_impl]", "[Discovery_impl]", False)
+IMPL = ObjectComparator(mysql_api, discovery_api, "[MySQL_impl    ]", "[Discovery_impl]", False)
 
 class DualImpl:
     def __init__(self):
