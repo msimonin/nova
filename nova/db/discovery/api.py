@@ -1376,8 +1376,9 @@ def fixed_ip_get_by_instance(context, instance_uuid):
 
     if not result:
         raise exception.FixedIpNotFoundForInstance(instance_uuid=instance_uuid)
-
-    return result
+    # TODO (jonathan): quick fix
+    return [x[0] for x in result]
+    # return result
 
 
 @require_admin_context
@@ -2832,6 +2833,7 @@ def network_get_associated_fixed_ips(context, network_id, host=None):
     result = query.all()
     data = []
     for datum in result:
+        print(">>> %s" % (datum))
         cleaned = {}
         cleaned['address'] = datum[0]
         cleaned['instance_uuid'] = datum[1]

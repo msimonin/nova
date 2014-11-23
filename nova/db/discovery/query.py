@@ -17,85 +17,48 @@
 
 """Implementation of Discovery backend."""
 
-import collections
-import copy
 import datetime
-import functools
-import sys
-import threading
-import time
-import uuid
 
-from oslo.config import cfg
-from oslo.db import exception as db_exc
-from oslo.db.sqlalchemy import session as db_session
-from oslo.db.sqlalchemy import utils as sqlalchemyutils
-from oslo.utils import excutils
-from oslo.utils import timeutils
-import six
-from sqlalchemy import and_
-from sqlalchemy import Boolean
-from sqlalchemy.exc import NoSuchTableError
-from sqlalchemy import Integer
-from sqlalchemy import MetaData
-from sqlalchemy import or_
-from sqlalchemy.orm import contains_eager
-from sqlalchemy.orm import joinedload
-from sqlalchemy.orm import joinedload_all
-from sqlalchemy.orm import noload
-from sqlalchemy.orm import undefer
-from sqlalchemy.schema import Table
-from sqlalchemy import sql
-from sqlalchemy.sql.expression import asc
-from sqlalchemy.sql.expression import desc
-from sqlalchemy.sql import false
-from sqlalchemy.sql import func
-from sqlalchemy.sql import null
-from sqlalchemy.sql import true
-from sqlalchemy import String
-
-from nova import block_device
-from nova.compute import task_states
-from nova.compute import vm_states
-import nova.context
 # from nova.db.sqlalchemy import models
-from nova import exception
-from nova.i18n import _, _LI
-from nova.openstack.common import log as logging
-from nova.openstack.common import uuidutils
 
-try:
-    from nova import quota
-except:
-    pass
+# try:
+#     from nova import quota
+# except:
+#     pass
 
 # RIAK
 import itertools
 import traceback
-import uuid
-import pprint
 import riak
 import inspect
-from inspect import getmembers
 from sqlalchemy.util._collections import KeyedTuple
-import netaddr
 from sqlalchemy.sql.expression import BinaryExpression
-from sqlalchemy.orm.evaluator import EvaluatorCompiler
-from sqlalchemy.orm.collections import InstrumentedList
-from nova.db.discovery import models
 import pytz
 try:
     from desimplifier import ObjectDesimplifier
     from desimplifier import find_table_name
 except:
     pass
+import collections
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 class Selection:
-    def __init__(self, model, attributes):
+    def __init__(self, model, attributes, is_function=False, function=None, is_hidden=False):
         self._model = model
         self._attributes = attributes
+        self._function = function
+        self._is_function = is_function
+        self.is_hidden = is_hidden
+
+    def __str__(self):
+        return "Selection(%s.%s)" % (self._model, self._attributes)
+
+    def __unicode__(self):
+        return self.__str__()
+        
+    def __repr__(self):
+        return self.__str__()
 
 class Function:
 
@@ -135,12 +98,25 @@ class Function:
 
 import re
 
+def extract_models(l):
+    already_processed = set()
+    result = []
+    for selectable in [x for x in l if not x._is_function]:
+        if not selectable._model in already_processed:
+            already_processed.add(selectable._model)
+            result += [selectable]
+    return result
+
+
 class RiakModelQuery:
 
     _funcs = []
     _initial_models = []
     _models = []
     _criterions = []
+
+    def all_selectable_are_functions(self):
+        return all(x._is_function for x in [y for y in self._models if not y.is_hidden])
 
     def __init__(self, *args, **kwargs):
         self._models = []
@@ -150,42 +126,39 @@ class RiakModelQuery:
         base_model = None
         if kwargs.has_key("base_model"):
             base_model = kwargs.get("base_model")
-
         for arg in args:
             if "count" in str(arg) or "sum" in str(arg):
                 function_name = re.sub("\(.*\)", "", str(arg))
                 field_id = re.sub("\)", "", re.sub(".*\(", "", str(arg)))
-                self._funcs += [Function(function_name, field_id)]
+                self._models += [Selection(None, None, is_function=True, function=Function(function_name, field_id))]
             elif self.find_table_name(arg) != "none":
-                if hasattr(arg, "_sa_class_manager"):
-                    self._models += [Selection(arg, "*")]
-                elif hasattr(arg, "class_"):
-                    self._models += [Selection(arg.class_, "*")]
+                arg_as_text = "%s" % (arg)
+                attribute_name = "*"
+                if not hasattr(arg, "_sa_class_manager"):
+                    if(len(arg_as_text.split(".")) > 1):
+                        attribute_name = arg_as_text.split(".")[-1]
+                    if hasattr(arg, "_sa_class_manager"):
+                        self._models += [Selection(arg, attribute_name)]
+                    elif hasattr(arg, "class_"):
+                        self._models += [Selection(arg.class_, attribute_name)]
                 else:
+                    self._models += [Selection(arg, "*")]
                     pass
             elif isinstance(arg, Selection):
                 self._models += [arg]
             elif isinstance(arg, Function):
+                self._models += [Selection(None, None, True, arg)]
                 self._funcs += [arg]
             elif isinstance(arg, BinaryExpression):
                 self._criterions += [arg]
             else:
                 pass
 
-        def unique(l):
-            already_processed = set()
-            result = []
-            for selectable in l:
-                if not selectable._model in already_processed:
-                    already_processed.add(selectable._model)
-                    result += [selectable]
-            return result
 
-        if len(self._models) == 0 and len(self._funcs) > 0:
+        if self.all_selectable_are_functions():
             if base_model:
-                self._models = [Selection(base_model, "*")]
+                self._models += [Selection(base_model, "*", is_hidden=True)]
 
-        self._models = unique(self._models)
 
     def get_single_object(self, model, id):
             
@@ -374,7 +347,7 @@ class RiakModelQuery:
 
                 product = []
                 for label in labels:
-                    product = [getattr(row, label)] + product
+                    product = product + [getattr(row, label)]
 
                 # Updating Foreign Keys of objects that are in the row
                 for label in labels:
@@ -406,10 +379,8 @@ class RiakModelQuery:
                                 field_column = instance_state.mapper._props[field].columns[0]
                                 field_default_value = field_column.default.arg
                                 setattr(current_object, field, field_default_value)
-                                print(field_default_value)
                             except:
                                 pass
-                        print(field)
 
                 return KeyedTuple(product, labels=labels)
             else:
@@ -421,32 +392,35 @@ class RiakModelQuery:
         columns = set([])
         rows = []
 
+        model_set = extract_models(self._models)
+
         # get the fields of the join result
-        for selectable in self._models:
+        for selectable in model_set:
             labels += [self.find_table_name(selectable._model).capitalize()]
 
             if selectable._attributes == "*":
                 try:
                     selected_attributes = selectable._model._sa_class_manager
                 except:
-                    # print "selectable._model -> %s" % (selectable._model)
                     selected_attributes = selectable._model.class_._sa_class_manager
                     pass
             else:
                 selected_attributes = [selectable._attributes]
 
             for field in selected_attributes:
-                try:
-                    attribute = selectable._model._sa_class_manager[field].__str__()
-                except:
-                    attribute = selectable._model.class_._sa_class_manager[field].__str__()
-                    pass
 
-                columns.add(attribute)
+                attribute = None
+                if hasattr(self._models, "class_"):
+                    attribute = selectable._model.class_._sa_class_manager[field].__str__()
+                elif hasattr(self._models, "_sa_class_manager"):
+                    attribute = selectable._model._sa_class_manager[field].__str__()
+
+                if attribute is not None:
+                    columns.add(attribute)
 
         # construct the cartesian product
         list_results = []
-        for selectable in self._models:
+        for selectable in model_set:
             list_results += [map(load_relationship, self.get_objects(selectable._model))]
             # list_results += [self.get_objects(model)]
 
@@ -465,26 +439,57 @@ class RiakModelQuery:
                     if not self.evaluate_criterion(criterion, row):
                         all_criterions_satisfied = False
                 if all_criterions_satisfied and not row in rows:
-                    # rows += [extract_sub_row(row, self._initial_models)]
-                    rows += [extract_sub_row(row, self._models)]
+                    rows += [extract_sub_row(row, model_set)]
 
-        # Now we check if this query contains functions such as count(*) or sum(*). If so, we compute their value.
-        if len(self._funcs) > 0:
-            row = []
-            labels = []
-            i = 0
-            for func in self._funcs:
-                labels += [i]
-                row += [func._function(rows)]
-                i += 1
-            return [KeyedTuple(row, labels=labels)]
+        final_rows = []
+        showable_selection = [x for x in self._models if (not x.is_hidden) or x._is_function]
+
+        if self.all_selectable_are_functions():
+            # functions = [x for x in self._models if (not x.is_hidden) or x._is_function]
+            # hiddens = [x for x in self._models if x.is_hidden]
+            # print(">1> %s" % (functions))
+            # print(">2> %s" % (showable_selection))
+            # print(">> %s" % (rows))
+            final_row = []
+            for selection in showable_selection:
+                value = selection._function._function(rows)
+                final_row += [value]
+                # print("inserting %s in %s" % (value, final_row))
+            return [final_row]
         else:
-            return rows
+            for row in rows:
+                final_row = []
+                # print(showable_selection)
+                for selection in showable_selection:
+                    if selection._is_function:
+                        value = selection._function._function(rows)
+                        final_row += [value]
+                    else:
+                        current_table_name = self.find_table_name(selection._model)
+                        key = current_table_name.capitalize()
+                        value = None
+                        print("%s[%s]" % (row, key))
+                        if hasattr(row, key):
+                            value = getattr(row, key)
+                        else:
+                            value = row
+                        print(value)
+                        if value is not None:
+                            if selection._attributes != "*":
+                                final_row += [getattr(value, selection._attributes)]
+                            else:
+                                final_row += [value]
+                if len(showable_selection) == 1:
+                    final_rows += final_row
+                else:
+                    final_rows += [final_row]
+
+        return final_rows
 
 
     def evaluate_criterion(self, criterion, value):
 
-        def uncapitalize(str):
+        def uncapitalize(s):
             return s[:1].lower() + s[1:] if s else ''
 
         def getattr_rec(obj, attr, otherwise=None):
@@ -611,8 +616,12 @@ class RiakModelQuery:
                 if right_value.tzinfo is None:
                     right_value = pytz.utc.localize(right_value)
 
-            if comparator(left_value, right_value):
-                result = True
+            if "NOT NULL" in right:
+                if left_value is not None:
+                    result = True
+            else:
+                if comparator(left_value, right_value):
+                    result = True
 
         if op == "IN":
             result = False
@@ -747,7 +756,7 @@ class RiakModelQuery:
                 is_class = inspect.isclass(item)
                 is_expression = isinstance(item, BinaryExpression)
                 if is_class:
-                    _models = [Selection(item, "*")] + _models
+                    _models = _models + [Selection(item, "*")]
                 elif is_expression:
                     _criterions += [item]
                 else:
