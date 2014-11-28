@@ -58,8 +58,7 @@ def merge_dict(a, b):
     if b is not None:
         for key in b:
             value = b[key]
-            if value is not None:
-                result[key] = value
+            result[key] = value
     return result
 
 class NovaBase(models.SoftDeleteMixin,
@@ -192,15 +191,6 @@ class NovaBase(models.SoftDeleteMixin,
         
         primitive = (int, str, bool)
 
-        for key in values:
-            value = values[key]
-            print(">> %s[%s] <- %s" % (self.__tablename__, key, value))
-            try:
-                setattr(self, key, value)
-            except Exception as e:
-                print(e)
-                pass
-
         """Set default values"""
         try:
             for field in self._sa_class_manager:
@@ -218,6 +208,15 @@ class NovaBase(models.SoftDeleteMixin,
                         pass
         except:
             pass
+
+        for key in values:
+            value = values[key]
+            print(">> %s[%s] <- %s" % (self.__tablename__, key, value))
+            try:
+                setattr(self, key, value)
+            except Exception as e:
+                print(e)
+                pass
 
         self.update_foreign_keys()
 
