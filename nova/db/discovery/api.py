@@ -2833,7 +2833,6 @@ def network_get_associated_fixed_ips(context, network_id, host=None):
     result = query.all()
     data = []
     for datum in result:
-        print(">>> %s" % (datum))
         cleaned = {}
         cleaned['address'] = datum[0]
         cleaned['instance_uuid'] = datum[1]
