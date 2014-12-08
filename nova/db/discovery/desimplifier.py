@@ -195,9 +195,9 @@ class ObjectDesimplifier:
                 if "None is not list-like" in str(e):
                     setattr(current_model, key, [])
                 else:
-                    print("%s with %s" % (e, key))
-                    traceback.print_exc()
-                pass
+                    # print("%s with %s" % (e, key))
+                    # traceback.print_exc()
+                    pass
 
         if hasattr(current_model, "user_id") and obj.has_key("user_id"):
             current_model.user_id = obj["user_id"]

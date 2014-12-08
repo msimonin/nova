@@ -19,13 +19,6 @@
 
 import datetime
 
-# from nova.db.sqlalchemy import models
-
-# try:
-#     from nova import quota
-# except:
-#     pass
-
 # RIAK
 import itertools
 import traceback

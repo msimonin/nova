@@ -34,7 +34,8 @@ from nova.db.sqlalchemy import types
 import riak
 from simplifier import ObjectSimplifier
 import traceback
-# from desimplifier import ObjectDesimplifier
+
+from utils import ReloadableRelationMixin
 
 CONF = cfg.CONF
 BASE = declarative_base()
@@ -42,10 +43,26 @@ BASE = declarative_base()
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def get_model_class_from_name(name):
-    # print(globals())
-    # model = globals()[name.capitalize()]
-    model = eval(name)
+    try:
+        model = eval(name)
+    except:
+        corrected_name = name
+        if corrected_name[-1] == "s":
+            corrected_name = corrected_name[0:-1]
+        if corrected_name == "InstanceActionsEvent":
+            corrected_name = "InstanceActionEvent"
+        model = eval(corrected_name)
     return model
+
+def get_tablename_from_name(name):
+    try:
+        model = eval(name)
+    except:
+        corrected_name = name
+        if corrected_name[-1] == "s":
+            corrected_name = corrected_name[0:-1]
+        model = eval(corrected_name)
+    return model.__tablename__
 
 def MediumText():
     return Text().with_variant(MEDIUMTEXT(), 'mysql')
@@ -63,24 +80,21 @@ def merge_dict(a, b):
 
 class NovaBase(models.SoftDeleteMixin,
                models.TimestampMixin,
-               models.ModelBase):
+               ReloadableRelationMixin):
     metadata = None
 
-    # Specific to RIAK
     def add_to_key_index(self, key, table_name):
 
-        # table_name = self.__tablename__
-
-        # Check if the current table contains keys.
+        """Check if the current table contains keys."""
         myBucket = dbClient.bucket("key_index")
         fetched = myBucket.get(table_name)
 
-        # If no keys: initialize an empty list of keys.
+        """If no keys: initialize an empty list of keys."""
         if fetched.data == None:
             empty_keys = myBucket.new(table_name, data=[])
             empty_keys.store()
 
-        # It is certain that there is a list of keys: we simply work with it.
+        """It is certain that there is a list of keys: we simply work with it."""
         fetched = myBucket.get(table_name)
 
         keys = fetched.data if fetched.data != None else []
@@ -91,14 +105,13 @@ class NovaBase(models.SoftDeleteMixin,
         myBucket2 = dbClient.bucket("key_index")
         fetched2 = myBucket2.get(table_name)
 
-    # Specific to RIAK
     def next_key(self, table_name):
 
-        # Check if the current table contains keys.
+        """Check if the current table contains keys."""
         myBucket = dbClient.bucket("key_index")
         fetched = myBucket.get(table_name)
 
-        # If no keys: initialize an empty list of keys.
+        """If no keys: initialize an empty list of keys."""
         if fetched.data == None:
             empty_keys = myBucket.new(table_name, data=[])
             empty_keys.store()
@@ -115,7 +128,6 @@ class NovaBase(models.SoftDeleteMixin,
     def already_in_database(self):
         return hasattr(self, "id") and (self.id is not None)
 
-    # Specific to RIAK
     def remove_from_key_index(self, key):
 
         myBucket = dbClient.bucket("key_index")
@@ -128,36 +140,20 @@ class NovaBase(models.SoftDeleteMixin,
 
     def soft_delete(self, session):
 
-        # MYSQL
-        # """Mark this object as deleted."""
-        # try:
-        #     self.deleted = self.id
-        #     self.deleted_at = timeutils.utcnow()
-        #     self.save(session=session)
-        #     session.flush()
-        # except:
-        #     print("[MYSQL] Error while deleting %s" % (self))
-        #     pass
-
         myBucket = dbClient.bucket(self.__tablename__)
 
-        ## delete existing object
+        """Delete existing object"""
         key_as_string = "%d" % (self.id)
         exisiting_object = myBucket.get(key_as_string)
 
         object_simplifier = ObjectSimplifier()
         simplified_object = object_simplifier.simplify(self)
 
-        ## update value of the object
+        """Update value of the object"""
         exisiting_object.data = simplified_object
         exisiting_object.store()
 
         self.remove_from_key_index(self.id)
-
-    # def update(self, session=None):
-    #     super(NovaBase, self).update(session=session)
-    #     self.updated_at.timeutils.utcnow()
-    #     self.save(session)
 
     def update_foreign_keys(self):
 
@@ -174,7 +170,7 @@ class NovaBase(models.SoftDeleteMixin,
                     if hasattr(self, remote_table_name):
                         pass
                     else:
-                        """ remove the "s" at the end of the tablename """
+                        """Remove the "s" at the end of the tablename"""
                         remote_table_name = remote_table_name[:-1]
                         pass
 
@@ -225,47 +221,34 @@ class NovaBase(models.SoftDeleteMixin,
         
         self.update_foreign_keys()
 
-        # MYSQL
-        # try:
-        #     from nova.db.sqlalchemy import api
-
-        #     if session is None:
-        #         session = api.get_session()
-
-        #     super(NovaBase, self).save(session=session)
-        # except:
-        #     print("[MYSQL] Error while saving %s" % (self))
-        #     pass
-            
-        # RIAK
-
         target = self
         table_name = self.__tablename__
 
-        # Check if the current object has an value associated with the "id" 
-        # field. If this is not the case, following code will generate an unique
-        # value, and store it in the "id" field.
+        """Check if the current object has an value associated with the "id" 
+        field. If this is not the case, following code will generate an unique
+        value, and store it in the "id" field."""
         if not self.already_in_database():
             self.id = self.next_key(table_name)
             print("\n\n>> Giving an ID to %s@%s\n\n" % (self.id, self.__tablename__))
         
-        # Before keeping the object in database, we simplify it: the object is
-        # converted into "JSON like" representation, and nested objects are
-        # extracted. It results in a list of object that will be stored in the
-        # database.
+        """Before keeping the object in database, we simplify it: the object is
+        converted into "JSON like" representation, and nested objects are
+        extracted. It results in a list of object that will be stored in the
+        database."""
         object_simplifier = ObjectSimplifier()
         simplified_object = object_simplifier.simplify(target)
 
         table_next_key_offset = {}
 
-        for key in [key for key in object_simplifier.complex_processed_objects if "x" in key]:
+        for key in [key for key in object_simplifier.complex_cache if "x" in key]:
 
-            table_name = key.split("-")[0]
+            classname = key.split("_")[0]
+            table_name = get_tablename_from_name(classname)
 
-            simplified_object = object_simplifier.simplified_processed_objects[key]            
-            complex_object = object_simplifier.complex_processed_objects[key]
+            simplified_object = object_simplifier.simple_cache[key]            
+            complex_object = object_simplifier.complex_cache[key]
 
-            # find a new_id for this object
+            """Find a new_id for this object"""
             table_next_key = self.next_key(table_name)
             if not table_name in table_next_key_offset:
                 table_next_key_offset[table_name] = 0
@@ -273,29 +256,25 @@ class NovaBase(models.SoftDeleteMixin,
 
             table_next_key_offset[table_name] += 1
 
-            # assign this id to the object
+            """Assign this id to the object"""
             simplified_object["id"] = new_id
             complex_object["id"] = new_id
 
-            # print(">>>>>>>>>>>>>> assigning key %s@%s to [%s] [%s]" %(str(new_id), table_name, simplified_object, complex_object))
-
             pass
 
-        for key in object_simplifier.complex_processed_objects:
+        for key in object_simplifier.complex_cache:
 
-            table_name = key.split("-")[0]
-            current_object = object_simplifier.complex_processed_objects[key]
+            classname = key.split("_")[0]
+            table_name = get_tablename_from_name(classname)
+            
+            current_object = object_simplifier.complex_cache[key]
 
             myBucket = dbClient.bucket(table_name)
 
-            # ## delete existing object
-            # exisiting_object = myBucket.get(key_as_string)
-            # exisiting_object.delete()
+            """Delete existing object"""
             print("simplified_object [%s][%s] --> %s" % (table_name, current_object["id"], current_object))
 
             current_object["nova_classname"] = table_name
-            # TODO: check this!
-            # current_object["metadata_novabase_classname"] = str(object_simplifier.complex_processed_objects[key].__class__.__name__)
 
             existing_object = {}
             if not "id" in current_object or current_object["id"] is None:
@@ -308,7 +287,6 @@ class NovaBase(models.SoftDeleteMixin,
 
             if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
                 current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
-            # current_object["updated_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
 
             print(">>>>>>>>>>>>>> storing in %s: {%s}" %(table_name, current_object["id"]))
             print(current_object)
@@ -323,27 +301,7 @@ class NovaBase(models.SoftDeleteMixin,
             except Exception as e:
                 print("Failed to store following object: %s because of %s, becoming %s" % (current_object, e, corrected_object))
                 pass
-            print("<<<<<<<<<<<<<< done (storing in %s: {%s})" %(self.__tablename__, self.id))
-        
-
-
-# def MediumText():
-#     return Text().with_variant(MEDIUMTEXT(), 'mysql')
-
-
-# class NovaBase(models.SoftDeleteMixin,
-#                models.TimestampMixin,
-#                models.ModelBase):
-#     metadata = None
-
-#     def save(self, session=None):
-#         from nova.db.sqlalchemy import api
-
-#         if session is None:
-#             session = api.get_session()
-
-#         super(NovaBase, self).save(session=session)
-
+            print("<<<<<<<<<<<<<< done (storing in %s: {%s})" %(table_name, self.id))
 
 class Service(BASE, NovaBase):
     """Represents a running service on a host."""
