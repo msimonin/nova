@@ -12,6 +12,39 @@ def merge_dicts(dict1, dict2):
     inside dict2 will erase values of dict1."""
     return dict(dict1.items() + dict2.items())
 
+def find_table_name(model):
+
+    """This function returns the name of the given model as a String. If the
+    model cannot be identified, it returns "none".
+    :param model: a model object candidate
+    :return: the table name or "none" if the object cannot be identified
+    """
+
+    if hasattr(model, "__tablename__"):
+        return model.__tablename__
+
+    if hasattr(model, "table"):
+        return model.table.name
+
+    if hasattr(model, "class_"):
+        return model.class_.__tablename__
+
+    if hasattr(model, "clauses"):
+        for clause in model.clauses:
+            return find_table_name(clause)
+
+    return "none"
+
+def is_novabase(obj):
+    """Check if the given object is an instance of a NovaBase."""
+    try:
+        return find_table_name(obj.__class__) is not "none"
+    except:
+        pass
+
+    return False
+
+
 class ReloadableRelationMixin(models.ModelBase):
     """Mixin that contains several methods that will be in charge of enabling
     NovaBase instances to reload default values and relationships."""

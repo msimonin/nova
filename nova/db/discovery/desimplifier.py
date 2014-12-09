@@ -56,7 +56,7 @@ class ObjectDesimplifier(object):
 
     def __init__(self):
         """Constructor"""
-        self._simple_to_model_dict = {}
+        self.cache = {}
 
     def is_dict_and_has_key(self, obj, key):
         """Check if the given object is a dict which contains the given key."""
@@ -86,103 +86,11 @@ class ObjectDesimplifier(object):
         if model_class_name is not None:
             model = get_model_class_from_name(model_class_name)
             model_object = model()
-            if not self._simple_to_model_dict.has_key(self.get_key(obj)):
-                self._simple_to_model_dict[self.get_key(obj)] = model_object
-            return self._simple_to_model_dict[self.get_key(obj)]
+            if not self.cache.has_key(self.get_key(obj)):
+                self.cache[self.get_key(obj)] = model_object
+            return self.cache[self.get_key(obj)]
         else:
             return None
-
-    def update_relationship_field(
-        self,
-        target,
-        table_name,
-        foreign_key,
-        remote_field,
-        fk_value):
-        """Update a given relationship field on the targetted object."""
-
-        key_index_bucket = db_client.bucket("key_index")
-        fetched = key_index_bucket.get(table_name)
-        keys = fetched.data
-
-        result = []
-        if keys != None:
-            for key in keys:
-                try:
-                    model_object = self.get_single_object(model, key)
-                    if hasattr(model_object, remote_field):
-                        if getattr(model_object, remote_field) == fk_value:
-                            result = result + [model_object]
-
-                except Exception as ex:
-                    print("problem with key: %s" % (key))
-                    traceback.print_exc()
-        if len(result) > 0:
-            first_result = result[0]
-
-            setattr(target, foreign_key, first_result)
-        return target
-
-    def update_foreign_keys(self, obj):
-        """Update all foreign keys of the given object."""
-
-        if hasattr(obj, "metadata"):
-            metadata = obj.metadata
-            tablename = find_table_name(obj)
-
-            if metadata and tablename in metadata.tables:
-                for each in metadata.tables[tablename].foreign_keys:
-                    local_field_name = str(each.parent).split(".")[-1]
-                    remote_table_name = each._colspec.split(".")[-2]
-                    remote_field_name = each._colspec.split(".")[-1]
-
-                    if hasattr(obj, remote_table_name):
-                        pass
-                    else:
-                        # Remove the "s" at the end of the tablename
-                        remote_table_name = remote_table_name[:-1]
-                        pass
-
-                    do_update = False
-                    try:
-                        if not obj is None:
-                            remote_object = getattr(obj, remote_table_name)
-                            if remote_object is not None:
-                                remote_field_value = getattr(
-                                    remote_object,
-                                    remote_field_name
-                                )
-                                setattr(
-                                    obj,
-                                    local_field_name,
-                                    remote_field_value
-                                )
-                            else:
-                                do_update = True
-
-                    except Exception as e:
-                        do_update = True
-                        current_local_value = None
-
-                    if do_update and hasattr(obj, local_field_name):
-                        current_local_value = getattr(obj, local_field_name)
-                        caps_subwords = []
-                        for word in remote_table_name.split("_"):
-                            caps_subwords.append(word.capitalize())
-                        remote_model_name = "".join(caps_subwords)
-                        remote_model_class = get_model_class_from_name(
-                            remote_model_name
-                        )
-
-                        self.update_relationship_field(
-                            obj,
-                            remote_table_name,
-                            remote_table_name,
-                            remote_field_name,
-                            current_local_value
-                        )
-
-
 
     def update_nova_model(self, obj):
         """Update the fields of the given object."""
@@ -226,8 +134,8 @@ class ObjectDesimplifier(object):
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""
 
-        if self._simple_to_model_dict.has_key(self.get_key(obj)):
-            return self._simple_to_model_dict[self.get_key(obj)]
+        if self.cache.has_key(self.get_key(obj)):
+            return self.cache[self.get_key(obj)]
 
         return self.update_nova_model(obj)
 
