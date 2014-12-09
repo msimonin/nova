@@ -1,3 +1,10 @@
+"""Desimplifier module.
+
+This module contains functions, classes and mix-in that are used for the
+def simplifcation of objects, before sending them to the services of nova.
+
+"""
+
 from models import get_model_class_from_name
 import datetime
 import traceback
@@ -14,12 +21,8 @@ except:
 
 db_client = riak.RiakClient(pb_port=8087, protocol='pbc')
 
-class Context(object):
-    is_admin = True
-
-context = Context()
-
 def convert_to_camelcase(word):
+    """Convert the given word into camelcase naming convention."""
     return ''.join(x.capitalize() or '_' for x in word.split('_'))
 
 
@@ -47,17 +50,22 @@ def find_table_name(model):
     return "none"
 
 class ObjectDesimplifier(object):
+    """Class that translate an object containing values taken from database
+    into an object containing values understandable by services composing
+    Nova."""
+
     def __init__(self):
+        """Constructor"""
         self._simple_to_model_dict = {}
-        pass
 
     def is_dict_and_has_key(self, obj, key):
+        """Check if the given object is a dict which contains the given key."""
         if isinstance(obj, dict):
             return obj.has_key(key)
         return False
 
     def get_key(self, obj):
-
+        """Returns a unique key for the given object."""
         if self.is_dict_and_has_key(obj, "tablename"):
             table_name = obj["tablename"]
             key = obj["id"]
@@ -65,28 +73,21 @@ class ObjectDesimplifier(object):
         else:
             return "%s-%s" % (hex(id(obj)), hex(id(obj)))
 
-    def prepare_nova_model(self, obj):
+    def spawn_empty_model(self, obj):
+        """Spawn an empty instance of the model class specified by the
+        given object"""
 
+        model_class = None
         if "novabase_classname" in obj:
             model_class_name = obj["novabase_classname"]
-            model = get_model_class_from_name(model_class_name)
-
-            model_object = model()
-
-            if not self._simple_to_model_dict.has_key(self.get_key(obj)):
-                self._simple_to_model_dict[self.get_key(obj)] = model_object
-
-            return self._simple_to_model_dict[self.get_key(obj)]
-
         elif "metadata_novabase_classname" in obj:
             model_class_name = obj["metadata_novabase_classname"]
+
+        if model_class_name is not None:
             model = get_model_class_from_name(model_class_name)
-
             model_object = model()
-
             if not self._simple_to_model_dict.has_key(self.get_key(obj)):
                 self._simple_to_model_dict[self.get_key(obj)] = model_object
-
             return self._simple_to_model_dict[self.get_key(obj)]
         else:
             return None
@@ -98,6 +99,7 @@ class ObjectDesimplifier(object):
         foreign_key,
         remote_field,
         fk_value):
+        """Update a given relationship field on the targetted object."""
 
         key_index_bucket = db_client.bucket("key_index")
         fetched = key_index_bucket.get(table_name)
@@ -107,7 +109,6 @@ class ObjectDesimplifier(object):
         if keys != None:
             for key in keys:
                 try:
-                    key_as_string = "%d" % (key)
                     model_object = self.get_single_object(model, key)
                     if hasattr(model_object, remote_field):
                         if getattr(model_object, remote_field) == fk_value:
@@ -116,26 +117,24 @@ class ObjectDesimplifier(object):
                 except Exception as ex:
                     print("problem with key: %s" % (key))
                     traceback.print_exc()
-                    pass
         if len(result) > 0:
             first_result = result[0]
 
             setattr(target, foreign_key, first_result)
-
-
-        pass
+        return target
 
     def update_foreign_keys(self, obj):
+        """Update all foreign keys of the given object."""
 
         if hasattr(obj, "metadata"):
             metadata = obj.metadata
             tablename = find_table_name(obj)
 
             if metadata and tablename in metadata.tables:
-                for fk in metadata.tables[tablename].foreign_keys:
-                    local_field_name = str(fk.parent).split(".")[-1]
-                    remote_table_name = fk._colspec.split(".")[-2]
-                    remote_field_name = fk._colspec.split(".")[-1]
+                for each in metadata.tables[tablename].foreign_keys:
+                    local_field_name = str(each.parent).split(".")[-1]
+                    remote_table_name = each._colspec.split(".")[-2]
+                    remote_field_name = each._colspec.split(".")[-1]
 
                     if hasattr(obj, remote_table_name):
                         pass
@@ -186,14 +185,17 @@ class ObjectDesimplifier(object):
 
 
     def update_nova_model(self, obj):
-        current_model = self.prepare_nova_model(obj)
+        """Update the fields of the given object."""
 
-        # check if obj is simplified or not
+        current_model = self.spawn_empty_model(obj)
+
+        # Check if obj is simplified or not
         if "simplify_strategy" in obj:
             object_bucket = db_client.bucket(obj["tablename"])
             riak_value = object_bucket.get(str(obj["id"]))
             obj = riak_value.data
-        # print("update_nova_model(%s) <- %s" %(current_model, obj))
+
+        # For each value of obj, set the corresponding attributes.
         for key in obj:
             simplified_value = self.desimplify(obj[key])
             try:
@@ -216,34 +218,35 @@ class ObjectDesimplifier(object):
             current_model.project_id = obj["project_id"]
 
         """ Update foreign keys """
-        self.update_foreign_keys(current_model)
+        current_model.update_foreign_keys()
+        # self.update_foreign_keys(current_model)
 
         return current_model
 
     def novabase_desimplify(self, obj):
+        """Desimplify a novabase object."""
 
         if self._simple_to_model_dict.has_key(self.get_key(obj)):
             return self._simple_to_model_dict[self.get_key(obj)]
-
-        table_name = obj["tablename"]
-        key = obj["id"]
-
-        object_bucket = db_client.bucket(table_name)
-        riak_value = object_bucket.get(str(key))
 
         return self.update_nova_model(obj)
 
 
     def datetime_desimplify(self, value):
+        """Desimplify a datetime object."""
+
         result = datetime.datetime.strptime(value["value"], '%b %d %Y %H:%M:%S')
         if value["timezone"] == "UTC":
             result = pytz.utc.localize(result)
         return result
 
     def ipnetwork_desimplify(self, value):
+        """Desimplify an IPNetwork object."""
+
         return netaddr.IPNetwork(value["value"])
 
     def desimplify(self, obj):
+        """Apply the best desimplification strategy on the given object."""
 
         result = obj
 
@@ -269,7 +272,8 @@ class ObjectDesimplifier(object):
 
 
         # Update foreign keys
-        self.update_foreign_keys(result)
+        if isinstance(result, models.NovaBase):
+            result.update_foreign_keys()
+            # self.update_foreign_keys(result)
 
-        # print("desimplify(%s) -> %s" % (obj, result))
         return result

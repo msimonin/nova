@@ -82,3 +82,62 @@ class ReloadableRelationMixin(models.ModelBase):
                     pass
         except:
             pass
+
+    def update_foreign_keys(self, obj):
+        """Update all foreign keys of the given object."""
+
+        if hasattr(obj, "metadata"):
+            metadata = obj.metadata
+            tablename = find_table_name(obj)
+
+            if metadata and tablename in metadata.tables:
+                for each in metadata.tables[tablename].foreign_keys:
+                    local_field_name = str(each.parent).split(".")[-1]
+                    remote_table_name = each._colspec.split(".")[-2]
+                    remote_field_name = each._colspec.split(".")[-1]
+
+                    if hasattr(obj, remote_table_name):
+                        pass
+                    else:
+                        # Remove the "s" at the end of the tablename
+                        remote_table_name = remote_table_name[:-1]
+                        pass
+
+                    do_update = False
+                    try:
+                        if not obj is None:
+                            remote_object = getattr(obj, remote_table_name)
+                            if remote_object is not None:
+                                remote_field_value = getattr(
+                                    remote_object,
+                                    remote_field_name
+                                )
+                                setattr(
+                                    obj,
+                                    local_field_name,
+                                    remote_field_value
+                                )
+                            else:
+                                do_update = True
+
+                    except Exception as e:
+                        do_update = True
+                        current_local_value = None
+
+                    if do_update and hasattr(obj, local_field_name):
+                        current_local_value = getattr(obj, local_field_name)
+                        caps_subwords = []
+                        for word in remote_table_name.split("_"):
+                            caps_subwords.append(word.capitalize())
+                        remote_model_name = "".join(caps_subwords)
+                        remote_model_class = get_model_class_from_name(
+                            remote_model_name
+                        )
+
+                        self.update_relationship_field(
+                            obj,
+                            remote_table_name,
+                            remote_table_name,
+                            remote_field_name,
+                            current_local_value
+                        )
