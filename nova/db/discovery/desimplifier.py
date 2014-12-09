@@ -1,18 +1,8 @@
 from models import get_model_class_from_name
 import datetime
-import riak
-# RIAK
-import itertools
 import traceback
-import uuid
-import pprint
 import riak
-import inspect
-from inspect import getmembers
-from sqlalchemy.util._collections import KeyedTuple
 import netaddr
-from sqlalchemy.sql.expression import BinaryExpression
-from sqlalchemy.orm.evaluator import EvaluatorCompiler
 from sqlalchemy.orm.collections import InstrumentedList
 from nova.db.discovery import models
 import pytz
@@ -22,10 +12,10 @@ try:
 except:
     pass
 
-dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
+db_client = riak.RiakClient(pb_port=8087, protocol='pbc')
 
-class Context:
-  is_admin = True
+class Context(object):
+    is_admin = True
 
 context = Context()
 
@@ -52,11 +42,11 @@ def find_table_name(model):
 
     if hasattr(model, "clauses"):
         for clause in model.clauses:
-            return self.find_table_name(clause)
+            return find_table_name(clause)
 
     return "none"
 
-class ObjectDesimplifier:
+class ObjectDesimplifier(object):
     def __init__(self):
         self._simple_to_model_dict = {}
         pass
@@ -101,9 +91,15 @@ class ObjectDesimplifier:
         else:
             return None
 
-    def update_relationship_field(self, target, table_name, foreign_key, remote_field_name, foreign_key_value):
+    def update_relationship_field(
+        self,
+        target,
+        table_name,
+        foreign_key,
+        remote_field,
+        fk_value):
 
-        key_index_bucket = dbClient.bucket("key_index")
+        key_index_bucket = db_client.bucket("key_index")
         fetched = key_index_bucket.get(table_name)
         keys = fetched.data
 
@@ -112,21 +108,19 @@ class ObjectDesimplifier:
             for key in keys:
                 try:
                     key_as_string = "%d" % (key)
-                    
-                    model_object = self.get_single_object(model, key)       
-
-                    if hasattr(model_object, remote_field_name) and getattr(model_object, remote_field_name) == foreign_key_value:
-                        result = result + [model_object]
+                    model_object = self.get_single_object(model, key)
+                    if hasattr(model_object, remote_field):
+                        if getattr(model_object, remote_field) == fk_value:
+                            result = result + [model_object]
 
                 except Exception as ex:
-                    print("problem with key: %s" %(key))
+                    print("problem with key: %s" % (key))
                     traceback.print_exc()
                     pass
-        
         if len(result) > 0:
             first_result = result[0]
 
-            setattr(obj, foreign_key, first_result)
+            setattr(target, foreign_key, first_result)
 
 
         pass
@@ -146,30 +140,48 @@ class ObjectDesimplifier:
                     if hasattr(obj, remote_table_name):
                         pass
                     else:
-                        """ remove the "s" at the end of the tablename """
+                        # Remove the "s" at the end of the tablename
                         remote_table_name = remote_table_name[:-1]
                         pass
 
-                    need_to_update_from_remote_object = False
+                    do_update = False
                     try:
                         if not obj is None:
                             remote_object = getattr(obj, remote_table_name)
                             if remote_object is not None:
-                                remote_field_value = getattr(remote_object, remote_field_name)
-                                setattr(obj, local_field_name, remote_field_value)
+                                remote_field_value = getattr(
+                                    remote_object,
+                                    remote_field_name
+                                )
+                                setattr(
+                                    obj,
+                                    local_field_name,
+                                    remote_field_value
+                                )
                             else:
-                                need_to_update_from_remote_object = True
+                                do_update = True
 
                     except Exception as e:
-                        need_to_update_from_remote_object = True
+                        do_update = True
                         current_local_value = None
 
-                    if need_to_update_from_remote_object and hasattr(obj, local_field_name):
+                    if do_update and hasattr(obj, local_field_name):
                         current_local_value = getattr(obj, local_field_name)
-                        remote_model_name = "".join([x.capitalize() for x in remote_table_name.split("_")])
-                        remote_model_class = get_model_class_from_name(remote_model_name)
+                        caps_subwords = []
+                        for word in remote_table_name.split("_"):
+                            caps_subwords.append(word.capitalize())
+                        remote_model_name = "".join(caps_subwords)
+                        remote_model_class = get_model_class_from_name(
+                            remote_model_name
+                        )
 
-                        self.update_relationship_field(obj, remote_table_name, remote_table_name, remote_field_name, current_local_value)
+                        self.update_relationship_field(
+                            obj,
+                            remote_table_name,
+                            remote_table_name,
+                            remote_field_name,
+                            current_local_value
+                        )
 
 
 
@@ -178,12 +190,10 @@ class ObjectDesimplifier:
 
         # check if obj is simplified or not
         if "simplify_strategy" in obj:
-            object_bucket = dbClient.bucket(obj["tablename"])
+            object_bucket = db_client.bucket(obj["tablename"])
             riak_value = object_bucket.get(str(obj["id"]))
             obj = riak_value.data
-
         # print("update_nova_model(%s) <- %s" %(current_model, obj))
-        
         for key in obj:
             simplified_value = self.desimplify(obj[key])
             try:
@@ -218,7 +228,7 @@ class ObjectDesimplifier:
         table_name = obj["tablename"]
         key = obj["id"]
 
-        object_bucket = dbClient.bucket(table_name)
+        object_bucket = db_client.bucket(table_name)
         riak_value = object_bucket.get(str(key))
 
         return self.update_nova_model(obj)
@@ -237,6 +247,9 @@ class ObjectDesimplifier:
 
         result = obj
 
+        is_dict = isinstance(obj, dict)
+        is_list = isinstance(obj, list)
+
         if self.is_dict_and_has_key(obj, "simplify_strategy"):
             if obj['simplify_strategy'] == 'datetime':
                 result = self.datetime_desimplify(obj)
@@ -244,20 +257,18 @@ class ObjectDesimplifier:
                 result = self.ipnetwork_desimplify(obj)
             if obj['simplify_strategy'] == 'novabase':
                 result = self.novabase_desimplify(obj)
-
-        elif isinstance(obj, list):
+        elif is_list:
             list_result = []
-
             for item in obj:
                 list_result += [self.desimplify(item)]
             result = list_result
-        elif isinstance(obj, dict) and obj.has_key("novabase_classname"):
+        elif is_dict and obj.has_key("novabase_classname"):
             result = self.update_nova_model(obj)
-        elif isinstance(obj, dict) and obj.has_key("metadata_novabase_classname"):
+        elif is_dict and obj.has_key("metadata_novabase_classname"):
             result = self.update_nova_model(obj)
 
 
-        """ Update foreign keys """
+        # Update foreign keys
         self.update_foreign_keys(result)
 
         # print("desimplify(%s) -> %s" % (obj, result))

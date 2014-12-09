@@ -83,7 +83,7 @@ class ObjectSimplifier(object):
 
     def novabase_simplify(self, obj, skip_complex_processing=False):
         """Simplify a NovaBase object."""
-
+        
         if not self.already_processed(obj):
 
             def process_field(field_value):
@@ -128,18 +128,18 @@ class ObjectSimplifier(object):
                 self.simple_cache[key] = simplified_object
 
 
-            fields_to_iterate = None
+            fields_iterator = None
             if hasattr(obj, "_sa_class_manager"):
-                fields_to_iterate = obj._sa_class_manager
+                fields_iterator = obj._sa_class_manager
             elif hasattr(obj, "__dict__"):
-                fields_to_iterate = obj.__dict__
+                fields_iterator = obj.__dict__
             elif obj.__class__.__name__ == "dict":
-                fields_to_iterate = obj
+                fields_iterator = obj
 
 
             complex_object = {}
-            if fields_to_iterate is not None:
-                for field in fields_to_iterate:
+            if fields_iterator is not None:
+                for field in fields_iterator:
                     field_value = getattr(obj, field)
 
                     if isinstance(field_value, models.NovaBase):
@@ -205,7 +205,7 @@ class ObjectSimplifier(object):
             if obj.__class__.__name__ == "dict":
                 fields_iterator = dictionnary_object
             else:
-                # Add table field in fields_to_iterate
+                # Add table field in fields_iterator
                 try:
                     for field in obj._sa_class_manager:
                         field_key = str(field)
@@ -253,72 +253,6 @@ class ObjectSimplifier(object):
                     else:
                         fields[field] = self.process_object(field_value, True)
                 result = fields
-
-            # Set default values
-            # try:
-            #     for field in obj._sa_class_manager:
-            #         state = obj._sa_state
-            #         field_value = getattr(obj, field)
-            #         if field_value is None:
-            #             try:
-            #                 field_column = state.mapper._props[field].columns[0]
-            #                 field_name = field_column.name
-            #                 field_default_value = field_column.default.arg
-            #                 if not "function" in str(type(field_default_value)):
-            #                     fields[field_name] = field_default_value
-            #             except:
-            #                 pass
-            # except:
-            #     pass
-
-            # # Updating Foreign Keys of objects that are in the row
-            # try:
-            #     for field in obj._sa_class_manager:
-            #         state = obj._sa_instance_state
-            #         field_value = getattr(obj, field)
-
-            #         if not field_value is None:
-            #             break
-
-            #         try:
-            #             field_column = state.mapper._props[field].columns[0]
-
-            #             if not field_column.foreign_keys:
-            #                 break
-
-            #             for fk in field_column.foreign_keys:
-            #                 local_field = str(fk.parent).split(".")[-1]
-            #                 remote_table = fk._colspec.split(".")[-2]
-            #                 remote_field = fk._colspec.split(".")[-1]
-            #                 try:
-
-            #                     remote_object = None
-            #                     try:
-            #                         remote_object = getattr(
-            #                             obj,
-            #                             remote_table
-            #                         )
-            #                     except:
-            #                         try:
-            #                             if remote_table[-1] == "s":
-            #                                 remote_table = remote_table[:-1]
-            #                                 remote_object = getattr(
-            #                                     obj,
-            #                                     remote_table
-            #                                 )
-            #                         except:
-            #                             pass
-            #                     remote_value = getattr(
-            #                         remote_object,
-            #                         remote_field
-            #                     )
-            #                     fields[local_field] = remote_value
-            #                 except:
-            #                     pass
-            #         except:
-            #             pass
-            # except:
-            #     pass
 
             if isinstance(obj, models.NovaBase):
                 key = self.get_cache_key(obj)
