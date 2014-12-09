@@ -95,7 +95,8 @@ class ObjectDesimplifier(object):
     def update_nova_model(self, obj):
         """Update the fields of the given object."""
 
-        current_model = self.spawn_empty_model(obj)
+        key = self.get_key(obj)
+        current_model = self.cache[key]
 
         # Check if obj is simplified or not
         if "simplify_strategy" in obj:
@@ -134,10 +135,13 @@ class ObjectDesimplifier(object):
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""
 
-        if self.cache.has_key(self.get_key(obj)):
-            return self.cache[self.get_key(obj)]
+        key = self.get_key(obj)
 
-        return self.update_nova_model(obj)
+        if not self.cache.has_key(key):
+            self.cache[key] = self.spawn_empty_model(obj)
+            self.update_nova_model(obj)
+
+        return self.cache[key]
 
 
     def datetime_desimplify(self, value):
@@ -174,9 +178,9 @@ class ObjectDesimplifier(object):
                 list_result += [self.desimplify(item)]
             result = list_result
         elif is_dict and obj.has_key("novabase_classname"):
-            result = self.update_nova_model(obj)
+            result = self.novabase_desimplify(obj)
         elif is_dict and obj.has_key("metadata_novabase_classname"):
-            result = self.update_nova_model(obj)
+            result = self.novabase_desimplify(obj)
 
 
         # Update foreign keys
