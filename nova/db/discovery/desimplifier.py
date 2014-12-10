@@ -7,17 +7,10 @@ def simplifcation of objects, before sending them to the services of nova.
 
 from models import get_model_class_from_name
 import datetime
-import traceback
 import riak
 import netaddr
-from sqlalchemy.orm.collections import InstrumentedList
-from nova.db.discovery import models
 import pytz
 
-try:
-    from query import RiakModelQuery
-except:
-    pass
 
 db_client = riak.RiakClient(pb_port=8087, protocol='pbc')
 
@@ -77,7 +70,6 @@ class ObjectDesimplifier(object):
         """Spawn an empty instance of the model class specified by the
         given object"""
 
-        model_class = None
         if "novabase_classname" in obj:
             model_class_name = obj["novabase_classname"]
         elif "metadata_novabase_classname" in obj:
@@ -116,8 +108,6 @@ class ObjectDesimplifier(object):
                 if "None is not list-like" in str(e):
                     setattr(current_model, key, [])
                 else:
-                    # print("%s with %s" % (e, key))
-                    # traceback.print_exc()
                     pass
 
         if hasattr(current_model, "user_id") and obj.has_key("user_id"):
@@ -126,9 +116,8 @@ class ObjectDesimplifier(object):
         if hasattr(current_model, "project_id") and obj.has_key("project_id"):
             current_model.project_id = obj["project_id"]
 
-        """ Update foreign keys """
+        # Update foreign keys
         current_model.update_foreign_keys()
-        # self.update_foreign_keys(current_model)
 
         return current_model
 
@@ -181,11 +170,5 @@ class ObjectDesimplifier(object):
             result = self.novabase_desimplify(obj)
         elif is_dict and obj.has_key("metadata_novabase_classname"):
             result = self.novabase_desimplify(obj)
-
-
-        # Update foreign keys
-        if isinstance(result, models.NovaBase):
-            result.update_foreign_keys()
-            # self.update_foreign_keys(result)
 
         return result

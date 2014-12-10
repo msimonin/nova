@@ -83,7 +83,7 @@ class ObjectSimplifier(object):
 
     def novabase_simplify(self, obj, skip_complex_processing=False):
         """Simplify a NovaBase object."""
-        
+
         if not self.already_processed(obj):
 
             def process_field(field_value):
