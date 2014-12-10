@@ -81,19 +81,45 @@ class ObjectSimplifier(object):
             "value": str(ipnetwork)
         }
 
+    def extract_complex_object(self, obj):
+        """Extract an object where each attribute has been simplified."""
+
+        def process_field(field_value):
+            """Inner function that processes a value."""
+            if not self.already_processed(field_value):
+                self.process_object(field_value, False)
+
+            key = self.get_cache_key(obj)
+            return self.simple_cache[key]
+
+        fields_iterator = None
+        if hasattr(obj, "_sa_class_manager"):
+            fields_iterator = obj._sa_class_manager
+        elif hasattr(obj, "__dict__"):
+            fields_iterator = obj.__dict__
+        elif obj.__class__.__name__ == "dict":
+            fields_iterator = obj
+
+        complex_object = {}
+        if fields_iterator is not None:
+            for field in fields_iterator:
+                field_value = getattr(obj, field)
+
+                if isinstance(field_value, models.NovaBase):
+                    complex_object[field] = process_field(field_value)
+                elif isinstance(field_value, list):
+                    field_list = []
+                    for item in field_value:
+                        field_list += [process_field(item)]
+                    complex_object[field] = field_list
+                else:
+                    complex_object[field] = field_value
+        return complex_object
+
     def novabase_simplify(self, obj, skip_complex_processing=False):
         """Simplify a NovaBase object."""
 
         if not self.already_processed(obj):
-
-            def process_field(field_value):
-                """Inner function that processes a value."""
-                if not self.already_processed(field_value):
-                    self.process_object(field_value, False)
-
-                key = self.get_cache_key(obj)
-                return self.simple_cache[key]
-
 
             obj.update_foreign_keys()
             key = self.get_cache_key(obj)
@@ -127,31 +153,8 @@ class ObjectSimplifier(object):
             if not key in self.simple_cache:
                 self.simple_cache[key] = simplified_object
 
-
-            fields_iterator = None
-            if hasattr(obj, "_sa_class_manager"):
-                fields_iterator = obj._sa_class_manager
-            elif hasattr(obj, "__dict__"):
-                fields_iterator = obj.__dict__
-            elif obj.__class__.__name__ == "dict":
-                fields_iterator = obj
-
-
-            complex_object = {}
-            if fields_iterator is not None:
-                for field in fields_iterator:
-                    field_value = getattr(obj, field)
-
-                    if isinstance(field_value, models.NovaBase):
-                        complex_object[field] = process_field(field_value)
-                    elif isinstance(field_value, list):
-                        field_list = []
-                        for item in field_value:
-                            field_list += [process_field(item)]
-                        complex_object[field] = field_list
-                    else:
-                        complex_object[field] = field_value
-
+            complex_object = self.extract_complex_object(obj)
+            
             metadata_class_name = novabase_classname
             complex_object["metadata_novabase_classname"] = metadata_class_name
 
