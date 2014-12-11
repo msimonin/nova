@@ -215,16 +215,17 @@ class ObjectSimplifier(object):
                         field_object = obj._sa_class_manager[field]
                         is_relationship = "relationships" in str(field_object.comparator)
                         if is_relationship:
-                            tablename = str(field_object.prop.table)
-                            remote_name = field_object.prop._lazy_strategy.key
-                            remote_id = next(iter(
-                                field_object.prop._calculated_foreign_keys
-                            )).key
-                            fields_iterator[field] = RelationshipIdentifier(
-                                tablename,
-                                remote_name,
-                                remote_id
-                            )
+                            pass
+                            # tablename = str(field_object.prop.table)
+                            # remote_name = field_object.prop._lazy_strategy.key
+                            # remote_id = next(iter(
+                            #     field_object.prop._calculated_foreign_keys
+                            # )).key
+                            # fields_iterator[field] = RelationshipIdentifier(
+                            #     tablename,
+                            #     remote_name,
+                            #     remote_id
+                            # )
                         else:
                             value = None
                             if dictionnary_object.has_key(field_key):
