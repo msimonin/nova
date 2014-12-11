@@ -9,6 +9,7 @@ import models
 import traceback
 
 from utils import merge_dicts
+from utils import is_novabase
 
 def extract_adress(obj):
     """Extract an indentifier for the given object: if the object contains an
@@ -81,16 +82,20 @@ class ObjectSimplifier(object):
             "value": str(ipnetwork)
         }
 
-    def extract_complex_object(self, obj):
-        """Extract an object where each attribute has been simplified."""
+    def process_field(self, field_value):
+        """Inner function that processes a value."""
 
-        def process_field(field_value):
-            """Inner function that processes a value."""
+        if is_novabase(field_value):            
             if not self.already_processed(field_value):
                 self.process_object(field_value, False)
+            key = self.get_cache_key(field_value)
+            result = self.simple_cache[key]
+        else:
+            result = self.process_object(field_value, False)
+        return result
 
-            key = self.get_cache_key(obj)
-            return self.simple_cache[key]
+    def extract_complex_object(self, obj):
+        """Extract an object where each attribute has been simplified."""        
 
         fields_iterator = None
         if hasattr(obj, "_sa_class_manager"):
@@ -104,16 +109,17 @@ class ObjectSimplifier(object):
         if fields_iterator is not None:
             for field in fields_iterator:
                 field_value = getattr(obj, field)
+                    # print(" (1) --> %s <= %s" % (field, self.process_object(field_value)))
 
                 if isinstance(field_value, models.NovaBase):
-                    complex_object[field] = process_field(field_value)
+                    complex_object[field] = self.process_field(field_value)
                 elif isinstance(field_value, list):
                     field_list = []
                     for item in field_value:
-                        field_list += [process_field(item)]
+                        field_list += [self.process_field(item)]
                     complex_object[field] = field_list
                 else:
-                    complex_object[field] = field_value
+                    complex_object[field] = self.process_field(field_value)
         return complex_object
 
     def novabase_simplify(self, obj, skip_complex_processing=False):
@@ -203,60 +209,29 @@ class ObjectSimplifier(object):
             if hasattr(obj, "reload_foreign_keys"):
                 obj.reload_foreign_keys()
 
-            # Prepare an Interator over obj's fields
-            fields_iterator = {}
-            if obj.__class__.__name__ == "dict":
-                fields_iterator = dictionnary_object
-            else:
-                # Add table field in fields_iterator
-                try:
-                    for field in obj._sa_class_manager:
-                        field_key = str(field)
-                        field_object = obj._sa_class_manager[field]
-                        is_relationship = "relationships" in str(field_object.comparator)
-                        if is_relationship:
-                            pass
-                            # tablename = str(field_object.prop.table)
-                            # remote_name = field_object.prop._lazy_strategy.key
-                            # remote_id = next(iter(
-                            #     field_object.prop._calculated_foreign_keys
-                            # )).key
-                            # fields_iterator[field] = RelationshipIdentifier(
-                            #     tablename,
-                            #     remote_name,
-                            #     remote_id
-                            # )
-                        else:
-                            value = None
-                            if dictionnary_object.has_key(field_key):
-                                value = dictionnary_object[field_key]
-                            fields_iterator[field_key] = value
-                except Exception as e:
-                    traceback.print_exc()
+            fields_iterator = None
+            if hasattr(obj, "_sa_class_manager"):
+                fields_iterator = obj._sa_class_manager
+            elif hasattr(obj, "__dict__"):
+                fields_iterator = obj.__dict__
+            elif obj.__class__.__name__ == "dict":
+                fields_iterator = obj
 
-            # Process the fields and make reccursive calls
+            result = {}
             if fields_iterator is not None:
-                nova_fields = []
                 for field in fields_iterator:
-                    if not field.startswith('_') and field != 'metadata':
-                        nova_fields.append(field)
-                for field in nova_fields:
-                    field_value = fields_iterator[field]
+                    field_value = getattr(obj, field)
+                    # print(" (2) --> %s <= %s" % (field, self.process_object(field_value)))
 
-                    if isinstance(field_value, list):
-                        copy_list = []
+                    if isinstance(field_value, models.NovaBase):
+                        result[field] = self.process_object(field_value)
+                    elif isinstance(field_value, list):
+                        field_list = []
                         for item in field_value:
-                            simple_value = self.process_object(item, True)
-                            copy_list.append(simple_value)
-                        fields[field] = copy_list
-                    elif isinstance(field_value, RelationshipIdentifier):
-                        fields[field] = self.relationship_simplify(
-                            field_value,
-                            getattr(obj, field_value._field_id)
-                        )
+                            field_list += [self.process_object(item)]
+                        result[field] = field_list
                     else:
-                        fields[field] = self.process_object(field_value, True)
-                result = fields
+                        result[field] = self.process_object(field_value)
 
             if isinstance(obj, models.NovaBase):
                 key = self.get_cache_key(obj)
@@ -276,6 +251,7 @@ class ObjectSimplifier(object):
                         self.simple_cache[key],
                         metadata_dict
                     )
+                    result = self.complex_cache[key]
 
         return result
 
@@ -295,14 +271,17 @@ class ObjectSimplifier(object):
         is_instance_of_novabase = isinstance(obj, models.NovaBase)
         should_skip = self.already_processed(obj) or skip_reccursive_call
 
-        if is_instance_of_novabase and should_skip:
-            result = self.novabase_simplify(obj)
+        if is_instance_of_novabase:
+            if should_skip:
+                result = self.novabase_simplify(obj)
+            else:
+                result = self.object_simplify(obj)
         elif obj.__class__.__name__ == "datetime":
             result = self.datetime_simplify(obj)
         elif obj.__class__.__name__ == "IPNetwork":
             result = self.ipnetwork_simplify(obj)
         else:
-            result = self.object_simplify(obj)
+            result = obj
 
         return result
 
