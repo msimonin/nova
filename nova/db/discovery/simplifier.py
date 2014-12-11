@@ -5,9 +5,6 @@ simplifcation of objects, before storing them into the discovery database.
 
 """
 
-import models
-import traceback
-
 from utils import merge_dicts
 from utils import is_novabase
 
@@ -18,7 +15,7 @@ def extract_adress(obj):
 
     result = hex(id(obj))
     try:
-        if isinstance(obj, NovaBase):
+        if is_novabase(obj):
             result = str(obj).split("at ")[1].split(">")[0]
     except:
         pass
@@ -85,7 +82,7 @@ class ObjectSimplifier(object):
     def process_field(self, field_value):
         """Inner function that processes a value."""
 
-        if is_novabase(field_value):            
+        if is_novabase(field_value):
             if not self.already_processed(field_value):
                 self.process_object(field_value, False)
             key = self.get_cache_key(field_value)
@@ -95,7 +92,7 @@ class ObjectSimplifier(object):
         return result
 
     def extract_complex_object(self, obj):
-        """Extract an object where each attribute has been simplified."""        
+        """Extract an object where each attribute has been simplified."""
 
         fields_iterator = None
         if hasattr(obj, "_sa_class_manager"):
@@ -109,9 +106,8 @@ class ObjectSimplifier(object):
         if fields_iterator is not None:
             for field in fields_iterator:
                 field_value = getattr(obj, field)
-                    # print(" (1) --> %s <= %s" % (field, self.process_object(field_value)))
 
-                if isinstance(field_value, models.NovaBase):
+                if is_novabase(field_value):
                     complex_object[field] = self.process_field(field_value)
                 elif isinstance(field_value, list):
                     field_list = []
@@ -160,7 +156,7 @@ class ObjectSimplifier(object):
                 self.simple_cache[key] = simplified_object
 
             complex_object = self.extract_complex_object(obj)
-            
+
             metadata_class_name = novabase_classname
             complex_object["metadata_novabase_classname"] = metadata_class_name
 
@@ -197,43 +193,15 @@ class ObjectSimplifier(object):
                 fields["novabase_classname"] = novabase_classname
 
             # Initialize fields to iterate
-            dictionnary_object = {}
-            if hasattr(obj, "__dict__"):
-                dictionnary_object = obj.__dict__
-            if obj.__class__.__name__ == "dict":
-                dictionnary_object = obj
-
             if hasattr(obj, "reload_default_values"):
                 obj.reload_default_values()
 
             if hasattr(obj, "reload_foreign_keys"):
                 obj.reload_foreign_keys()
 
-            fields_iterator = None
-            if hasattr(obj, "_sa_class_manager"):
-                fields_iterator = obj._sa_class_manager
-            elif hasattr(obj, "__dict__"):
-                fields_iterator = obj.__dict__
-            elif obj.__class__.__name__ == "dict":
-                fields_iterator = obj
+            result = self.extract_complex_object(obj)
 
-            result = {}
-            if fields_iterator is not None:
-                for field in fields_iterator:
-                    field_value = getattr(obj, field)
-                    # print(" (2) --> %s <= %s" % (field, self.process_object(field_value)))
-
-                    if isinstance(field_value, models.NovaBase):
-                        result[field] = self.process_object(field_value)
-                    elif isinstance(field_value, list):
-                        field_list = []
-                        for item in field_value:
-                            field_list += [self.process_object(item)]
-                        result[field] = field_list
-                    else:
-                        result[field] = self.process_object(field_value)
-
-            if isinstance(obj, models.NovaBase):
+            if is_novabase(obj):
                 key = self.get_cache_key(obj)
                 if not key in self.complex_cache:
                     self.complex_cache[key] = result
@@ -255,27 +223,18 @@ class ObjectSimplifier(object):
 
         return result
 
-    def relationship_simplify(self, relationship, id_value):
-        """Simplify a Relationship object."""
-
-        return {
-            "simplify_strategy": "novabase",
-            "tablename": relationship._tablename,
-            "id": id_value,
-            "value": id_value
-        }
-
     def process_object(self, obj, skip_reccursive_call=True):
         """Apply the best simplification strategy to the given object."""
 
-        is_instance_of_novabase = isinstance(obj, models.NovaBase)
         should_skip = self.already_processed(obj) or skip_reccursive_call
 
-        if is_instance_of_novabase:
+        if is_novabase(obj):
             if should_skip:
                 result = self.novabase_simplify(obj)
             else:
-                result = self.object_simplify(obj)
+                key = self.get_cache_key(obj)
+                self.novabase_simplify(obj)
+                result = self.complex_cache[key]
         elif obj.__class__.__name__ == "datetime":
             result = self.datetime_simplify(obj)
         elif obj.__class__.__name__ == "IPNetwork":
