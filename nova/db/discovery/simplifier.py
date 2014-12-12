@@ -182,15 +182,10 @@ class ObjectSimplifier(object):
             is_basic_type = True
 
         if do_deep_simplification and not is_basic_type:
-            fields = {}
 
             novabase_classname = str(obj.__class__.__name__)
             if isinstance(obj, dict) and "novabase_classname" in obj:
                 novabase_classname = obj["novabase_classname"]
-
-            # TODO(Jonathan): find a way to remove this hack
-            if str(obj.__class__.__name__) != "dict":
-                fields["novabase_classname"] = novabase_classname
 
             # Initialize fields to iterate
             if hasattr(obj, "reload_default_values"):
