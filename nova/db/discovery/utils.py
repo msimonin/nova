@@ -35,10 +35,18 @@ def find_table_name(model):
 
     return "none"
 
+def is_lazyreference(obj):
+    """Check if the given object is a lazy reference to an instance of a 
+    NovaBase."""
+
+    value = str(obj) 
+    return value.startswith("Lazy(") and value.endswith(")")
+
 def is_novabase(obj):
     """Check if the given object is an instance of a NovaBase."""
+    
     try:
-        return find_table_name(obj.__class__) is not "none"
+        return find_table_name(obj.__class__) is not "none" or is_lazyreference(obj)
     except:
         pass
 

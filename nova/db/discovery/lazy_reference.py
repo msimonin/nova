@@ -23,10 +23,14 @@ class LazyReference:
 
     def __init__(self, base, id):
         self._base = base
+        self._novabase_class = base
         self._id = id
 
     def lazy_ref_key(self):
         return "%s_%s" % (self._base, str(self._id))
+
+    def resolve_model_name(self):
+        return "".join([x.capitalize() for x in self._base.split("_")])
 
     def load(self):
 
@@ -40,13 +44,19 @@ class LazyReference:
         from desimplifier import ObjectDesimplifier
 
         desimplifier = ObjectDesimplifier()
-        print(fetched.data)
-        for key in riak_object:
-            value = desimplifier.desimplify(riak_object[key])
-            try:
-                setattr(current_ref, key, desimplifier.desimplify(riak_object[key]))
-            except Exception as e:
-                pass
+        # print(fetched.data)
+        try:
+            for key in riak_object:
+                value = desimplifier.desimplify(riak_object[key])
+                # print("key => %s -> %s" % (key, value))
+                try:
+                    setattr(current_ref, key, desimplifier.desimplify(riak_object[key]))
+                except Exception as e:
+                    print("key => %s -> %s impossible because of %s" % (key, value, e))
+                    traceback.print_exc()
+                    pass
+        except:
+            pass
 
         self.update_relationships(current_ref)
 
@@ -143,10 +153,7 @@ class LazyReference:
 
         if self.need_to_reload(key):
 
-            model_class_name = self._base
-            model_class_name = "".join([x.capitalize() for x in model_class_name.split("_")])
-
-            model = get_model_class_from_name(model_class_name)
+            model = get_model_class_from_name(self.resolve_model_name())
 
             if model is not None:
                 self.lazy_ref_map[key] = (now_in_ms(), model())

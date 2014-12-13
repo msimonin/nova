@@ -5,42 +5,18 @@ def simplifcation of objects, before sending them to the services of nova.
 
 """
 
-from models import get_model_class_from_name
 import datetime
 import riak
 import netaddr
 import pytz
-
+import models
+import lazy_reference
 
 db_client = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def convert_to_camelcase(word):
     """Convert the given word into camelcase naming convention."""
     return ''.join(x.capitalize() or '_' for x in word.split('_'))
-
-
-def find_table_name(model):
-
-    """This function returns the name of the given model as a String. If the
-    model cannot be identified, it returns "none".
-    :param model: a model object candidate
-    :return: the table name or "none" if the object cannot be identified
-    """
-
-    if hasattr(model, "__tablename__"):
-        return model.__tablename__
-
-    if hasattr(model, "table"):
-        return model.table.name
-
-    if hasattr(model, "class_"):
-        return model.class_.__tablename__
-
-    if hasattr(model, "clauses"):
-        for clause in model.clauses:
-            return find_table_name(clause)
-
-    return "none"
 
 class ObjectDesimplifier(object):
     """Class that translate an object containing values taken from database
@@ -76,7 +52,7 @@ class ObjectDesimplifier(object):
             model_class_name = obj["metadata_novabase_classname"]
 
         if model_class_name is not None:
-            model = get_model_class_from_name(model_class_name)
+            model = models.get_model_class_from_name(model_class_name)
             model_object = model()
             if not self.cache.has_key(self.get_key(obj)):
                 self.cache[self.get_key(obj)] = model_object
@@ -125,10 +101,21 @@ class ObjectDesimplifier(object):
         """Desimplify a novabase object."""
 
         key = self.get_key(obj)
-
         if not self.cache.has_key(key):
-            self.cache[key] = self.spawn_empty_model(obj)
-            self.update_nova_model(obj)
+            if obj.has_key("nova_classname"):
+                tablename = obj["nova_classname"]
+            elif obj.has_key("novabase_classname"):
+                tablename = models.get_tablename_from_name(
+                    obj["novabase_classname"]
+                )
+            else:
+                tablename = models.get_tablename_from_name(
+                    obj["metadata_novabase_classname"]
+                )
+            self.cache[key] = lazy_reference.LazyReference(
+                tablename,
+                obj["id"]
+            )
 
         return self.cache[key]
 

@@ -85,7 +85,7 @@ from sqlalchemy.orm.collections import InstrumentedList
 from nova.db.discovery import models
 import pytz
 from desimplifier import ObjectDesimplifier
-from desimplifier import find_table_name
+from utils import find_table_name
 from query import RiakModelQuery
 
 db_opts = [

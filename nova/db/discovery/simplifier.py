@@ -130,6 +130,8 @@ class ObjectSimplifier(object):
                 simplified_object = self.simple_cache[key]
             else:
                 novabase_classname = str(obj.__class__.__name__)
+                if novabase_classname == "LazyReference":
+                    novabase_classname = obj.resolve_model_name()
                 if isinstance(obj, dict) and "novabase_classname" in obj:
                     novabase_classname = obj["novabase_classname"]
                 tmp = {
@@ -184,6 +186,8 @@ class ObjectSimplifier(object):
         if do_deep_simplification and not is_basic_type:
 
             novabase_classname = str(obj.__class__.__name__)
+            if novabase_classname == "LazyReference":
+                novabase_classname = obj.resolve_model_name()
             if isinstance(obj, dict) and "novabase_classname" in obj:
                 novabase_classname = obj["novabase_classname"]
 
