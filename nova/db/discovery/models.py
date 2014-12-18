@@ -34,6 +34,8 @@ from nova.db.sqlalchemy import types
 import riak
 from simplifier import ObjectSimplifier
 import traceback
+import sys
+import inspect
 
 from utils import ReloadableRelationMixin
 
@@ -42,26 +44,68 @@ BASE = declarative_base()
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
+def starts_with_uppercase(name):
+    if name is None or len(name) < 1:
+        return False
+    else:
+        return name[0].isupper()
+
+def convert_to_model_name(name):
+    result = name
+    if result[-1] == "s":
+        result = result[0:-1]
+    if not starts_with_uppercase(result):
+        result = result[0].upper() + result[1:]
+    if result == "InstanceActionsEvent":
+        result = "InstanceActionEvent"
+    return result
+
+tablename_to_classname_mapping = None
+classname_to_tablename_mapping = None
+
+def load_model_classnames_from_tablenames():
+    global tablename_to_classname_mapping
+    global classname_to_tablename_mapping
+
+    tablename_to_classname_mapping = {}
+    classname_to_tablename_mapping = {}
+
+    clsmembers = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+    for each in clsmembers:
+        if hasattr(each[1], "__tablename__"):
+            tablename = each[1].__tablename__
+            classname = each[1].__name__
+            tablename_to_classname_mapping[tablename] = classname
+            classname_to_tablename_mapping[classname] = tablename
+
+def get_model_classname_from_tablename(tablename):
+    global tablename_to_classname_mapping 
+    if tablename_to_classname_mapping is None:
+        load_model_classnames_from_tablenames()
+    if tablename_to_classname_mapping.has_key(tablename):
+        return tablename_to_classname_mapping[tablename]
+    else:
+        return None
+
+def get_model_tablename_from_classname(tablename):
+    global classname_to_tablename_mapping 
+    if classname_to_tablename_mapping is None:
+        load_model_classnames_from_tablenames()
+    if classname_to_tablename_mapping.has_key(tablename):
+        return classname_to_tablename_mapping[tablename]
+    else:
+        return None
+
 def get_model_class_from_name(name):
     try:
         model = eval(name)
     except:
-        corrected_name = name
-        if corrected_name[-1] == "s":
-            corrected_name = corrected_name[0:-1]
-        if corrected_name == "InstanceActionsEvent":
-            corrected_name = "InstanceActionEvent"
+        corrected_name = convert_to_model_name(name)
         model = eval(corrected_name)
     return model
 
 def get_tablename_from_name(name):
-    try:
-        model = eval(name)
-    except:
-        corrected_name = name
-        if corrected_name[-1] == "s":
-            corrected_name = corrected_name[0:-1]
-        model = eval(corrected_name)
+    model = get_model_class_from_name(name)
     return model.__tablename__
 
 def MediumText():
@@ -242,8 +286,8 @@ class NovaBase(models.SoftDeleteMixin,
 
         for key in [key for key in object_simplifier.complex_cache if "x" in key]:
 
-            classname = key.split("_")[0]
-            table_name = get_tablename_from_name(classname)
+            classname = "_".join(key.split("_")[0:-1])
+            table_name = get_model_tablename_from_classname(classname)
 
             simplified_object = object_simplifier.simple_cache[key]            
             complex_object = object_simplifier.complex_cache[key]
@@ -264,8 +308,8 @@ class NovaBase(models.SoftDeleteMixin,
 
         for key in object_simplifier.complex_cache:
 
-            classname = key.split("_")[0]
-            table_name = get_tablename_from_name(classname)
+            classname = "_".join(key.split("_")[0:-1])
+            table_name = get_model_tablename_from_classname(classname)
             
             current_object = object_simplifier.complex_cache[key]
 

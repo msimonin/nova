@@ -42,61 +42,6 @@ class ObjectDesimplifier(object):
         else:
             return "%s-%s" % (hex(id(obj)), hex(id(obj)))
 
-    def spawn_empty_model(self, obj):
-        """Spawn an empty instance of the model class specified by the
-        given object"""
-
-        if "novabase_classname" in obj:
-            model_class_name = obj["novabase_classname"]
-        elif "metadata_novabase_classname" in obj:
-            model_class_name = obj["metadata_novabase_classname"]
-
-        if model_class_name is not None:
-            model = models.get_model_class_from_name(model_class_name)
-            model_object = model()
-            if not self.cache.has_key(self.get_key(obj)):
-                self.cache[self.get_key(obj)] = model_object
-            return self.cache[self.get_key(obj)]
-        else:
-            return None
-
-    def update_nova_model(self, obj):
-        """Update the fields of the given object."""
-
-        key = self.get_key(obj)
-        current_model = self.cache[key]
-
-        # Check if obj is simplified or not
-        if "simplify_strategy" in obj:
-            object_bucket = db_client.bucket(obj["tablename"])
-            riak_value = object_bucket.get(str(obj["id"]))
-            obj = riak_value.data
-
-        # For each value of obj, set the corresponding attributes.
-        for key in obj:
-            simplified_value = self.desimplify(obj[key])
-            try:
-                if simplified_value is not None:
-                    setattr(current_model, key, self.desimplify(obj[key]))
-                else:
-                    setattr(current_model, key, obj[key])
-            except Exception as e:
-                if "None is not list-like" in str(e):
-                    setattr(current_model, key, [])
-                else:
-                    pass
-
-        if hasattr(current_model, "user_id") and obj.has_key("user_id"):
-            current_model.user_id = obj["user_id"]
-
-        if hasattr(current_model, "project_id") and obj.has_key("project_id"):
-            current_model.project_id = obj["project_id"]
-
-        # Update foreign keys
-        current_model.update_foreign_keys()
-
-        return current_model
-
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""
 
@@ -114,7 +59,8 @@ class ObjectDesimplifier(object):
                 )
             self.cache[key] = lazy_reference.LazyReference(
                 tablename,
-                obj["id"]
+                obj["id"],
+                desimplifier=self
             )
 
         return self.cache[key]

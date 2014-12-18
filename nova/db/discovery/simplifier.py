@@ -47,7 +47,7 @@ class ObjectSimplifier(object):
 
         classname = obj.__class__.__name__
         if classname == "LazyReference":
-            return obj.lazy_ref_key()
+            return obj.get_key()
 
         if hasattr(obj, "id") and getattr(obj, "id") is not None:
             key = "%s_%s" % (classname, obj.id)

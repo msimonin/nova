@@ -6,6 +6,9 @@ from models import get_model_class_from_name
 import time
 import traceback
 
+from nova.db.discovery.models import get_model_classname_from_tablename
+from nova.db.discovery.models import get_model_tablename_from_classname
+
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def now_in_ms():
@@ -16,163 +19,118 @@ class EmptyObject:
 
 class LazyReference:
 
-    lazy_ref_map = {}
-
-    def convert_to_camelcase(word):
-        return ''.join(x.capitalize() or '_' for x in word.split('_'))
-
-    def __init__(self, base, id):
+    def __init__(self, base, id, desimplifier=None):
+        """Constructor"""
         self._base = base
-        self._novabase_class = base
         self._id = id
 
-    def lazy_ref_key(self):
-        return "%s_%s" % (self._base, str(self._id))
+        self.cache = {}
+
+        if desimplifier is None:
+            from desimplifier import ObjectDesimplifier
+            self.desimplifier = ObjectDesimplifier()
+        else:
+            self.desimplifier = desimplifier
+
+    def get_key(self):
+        return "%s_%s" % (self.resolve_model_name(), str(self._id))
 
     def resolve_model_name(self):
-        return "".join([x.capitalize() for x in self._base.split("_")])
+        return get_model_classname_from_tablename(self._base)
+
+    def spawn_empty_model(self, obj):
+        """Spawn an empty instance of the model class specified by the
+        given object"""
+
+        key = self.get_key()
+
+        if "novabase_classname" in obj:
+            model_class_name = obj["novabase_classname"]
+        elif "metadata_novabase_classname" in obj:
+            model_class_name = obj["metadata_novabase_classname"]
+
+        if model_class_name is not None:
+            model = get_model_class_from_name(model_class_name)
+            model_object = model()
+            if not self.cache.has_key(key):
+                self.cache[key] = model_object
+            return self.cache[key]
+        else:
+            return None
+
+    def update_nova_model(self, obj):
+        """Update the fields of the given object."""
+
+        
+
+        key = self.get_key()
+        current_model = self.cache[key]
+
+        # Check if obj is simplified or not
+        if "simplify_strategy" in obj:
+            object_bucket = db_client.bucket(obj["tablename"])
+            riak_value = object_bucket.get(str(obj["id"]))
+            obj = riak_value.data
+
+        # For each value of obj, set the corresponding attributes.
+        for key in obj:
+            simplified_value = self.desimplifier.desimplify(obj[key])
+            try:
+                if simplified_value is not None:
+                    setattr(current_model, key, self.desimplifier.desimplify(obj[key]))
+                else:
+                    setattr(current_model, key, obj[key])
+            except Exception as e:
+                if "None is not list-like" in str(e):
+                    setattr(current_model, key, [])
+                else:
+                    pass
+
+        if hasattr(current_model, "user_id") and obj.has_key("user_id"):
+            current_model.user_id = obj["user_id"]
+
+        if hasattr(current_model, "project_id") and obj.has_key("project_id"):
+            current_model.project_id = obj["project_id"]
+
+        # Update foreign keys
+        current_model.update_foreign_keys()
+
+        return current_model
 
     def load(self):
 
-        key = self.lazy_ref_key()
-        current_ref = self.lazy_ref_map[key][1]
+
+        key = self.get_key()
+
+        print("LOADING (%s)" % (key))
 
         key_index_bucket = dbClient.bucket(self._base)
         fetched = key_index_bucket.get(str(self._id))
-        riak_object = fetched.data
+        obj = fetched.data
 
-        from desimplifier import ObjectDesimplifier
+        self.spawn_empty_model(obj)
+        self.update_nova_model(obj)
 
-        desimplifier = ObjectDesimplifier()
-        # print(fetched.data)
-        try:
-            for key in riak_object:
-                value = desimplifier.desimplify(riak_object[key])
-                # print("key => %s -> %s" % (key, value))
-                try:
-                    setattr(current_ref, key, desimplifier.desimplify(riak_object[key]))
-                except Exception as e:
-                    print("key => %s -> %s impossible because of %s" % (key, value, e))
-                    traceback.print_exc()
-                    pass
-        except:
-            pass
-
-        self.update_relationships(current_ref)
-
-    def find_object_with_filter(self, table_name, field_name, filtering_value):
-
-        key_index_bucket = dbClient.bucket("key_index")
-        fetched = key_index_bucket.get(table_name)
-        keys = fetched.data
-
-        result = []
-        if keys != None:
-            for key in keys:
-                try:
-
-                    key_as_string = str(key)
-
-                    object_bucket_1 = dbClient.bucket(table_name)
-                    riak_value = object_bucket_1.get(str(key)).data
-
-                    if riak_value[field_name] == filtering_value:
-                        model_object = LazyReference(table_name, str(key))
-                        result += [model_object]
-
-                except Exception as ex:
-                    print("problem with key: %s" %(key))
-                    traceback.print_exc()
-                    pass
-        
-        if len(result) > 0:
-            return result[0]
-        return None
-
-
-    def update_relationships(self, obj):
-
-        skip_relationships = True
-        relationships = None
-        for field in obj._sa_class_manager:
-            try:
-                relationships = obj._sa_class_manager[field].parent.relationships._data
-                skip_relationships = False
-            except:
-                pass
-            break
-
-        if not skip_relationships:
-            
-            for relationship in relationships:
-                relationship_object = relationships[relationship]
-
-                if "MANYTOONE" in str(relationship_object.direction):
-                    for local_column_pair in relationship_object.local_remote_pairs:
-
-                        local_column = local_column_pair[0]
-                        remote_column = local_column_pair[1]
-
-                        local_column_key = local_column.description
-                        local_column_value = getattr(obj, local_column_key)
-
-
-                        local_column_obj = str(relationship_object.class_attribute).split(".")[-1]
-
-                        remote_column_key = remote_column.description
-                        remote_table_name = str(remote_column.table)
-                        remote_column_value = getattr(obj, local_column_obj)
-
-                        if local_column_value is None and remote_column_value is None:
-                            pass
-
-                        if not local_column_value is None and not remote_column_value is None:
-                            pass
-
-                        if not local_column_value is None and remote_column_value is None:
-                            remote_object = self.find_object_with_filter(remote_table_name, remote_column_key, local_column_value)
-                            setattr(obj, local_column_obj, remote_object)
-                            pass
-
-                        if local_column_value is None and not remote_column_value is None:
-                            pass
-
-    def need_to_reload(self, key):
-
-        need_to_reload = True
-
-        if self.lazy_ref_map.has_key(key):
-            return False
-
-        return need_to_reload
-
+        return self.cache[key]
 
     def get_complex_ref(self):
 
-        key = self.lazy_ref_key()       
+        key = self.get_key()       
 
-        if self.need_to_reload(key):
+        if not self.cache.has_key(key):
+            self.load()            
 
-            model = get_model_class_from_name(self.resolve_model_name())
-
-            if model is not None:
-                self.lazy_ref_map[key] = (now_in_ms(), model())
-            else:
-                self.lazy_ref_map[key] = (now_in_ms(), EmptyObject())
-
-            self.load()
-
-        return self.lazy_ref_map[key][1]
+        return self.cache[key]
 
 
     def __getattr__(self, item):
         return getattr(self.get_complex_ref(), item)
 
     def __str__(self):
-        return "Lazy(%s)" % (self.lazy_ref_key())
+        return "Lazy(%s)" % (self.get_key())
 
     def __repr__(self):
-        return "Lazy(%s)" % (self.lazy_ref_key())
+        return "Lazy(%s)" % (self.get_key())
 
     def __nonzero__(self):
         return not not self.get_complex_ref()
