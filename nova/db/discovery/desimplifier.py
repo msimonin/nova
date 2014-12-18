@@ -1,18 +1,15 @@
 """Desimplifier module.
 
 This module contains functions, classes and mix-in that are used for the
-def simplifcation of objects, before sending them to the services of nova.
+desimplification of objects, before sending them to the services of nova.
 
 """
 
 import datetime
-import riak
 import netaddr
 import pytz
-import models
-import lazy_reference
-
-db_client = riak.RiakClient(pb_port=8087, protocol='pbc')
+import nova.db.discovery.models
+import nova.db.discovery.lazy_reference
 
 def convert_to_camelcase(word):
     """Convert the given word into camelcase naming convention."""
@@ -29,12 +26,14 @@ class ObjectDesimplifier(object):
 
     def is_dict_and_has_key(self, obj, key):
         """Check if the given object is a dict which contains the given key."""
+
         if isinstance(obj, dict):
             return obj.has_key(key)
         return False
 
     def get_key(self, obj):
         """Returns a unique key for the given object."""
+
         if self.is_dict_and_has_key(obj, "tablename"):
             table_name = obj["tablename"]
             key = obj["id"]
@@ -50,14 +49,14 @@ class ObjectDesimplifier(object):
             if obj.has_key("nova_classname"):
                 tablename = obj["nova_classname"]
             elif obj.has_key("novabase_classname"):
-                tablename = models.get_tablename_from_name(
+                tablename = nova.db.discovery.models.get_tablename_from_name(
                     obj["novabase_classname"]
                 )
             else:
-                tablename = models.get_tablename_from_name(
+                tablename = nova.db.discovery.models.get_tablename_from_name(
                     obj["metadata_novabase_classname"]
                 )
-            self.cache[key] = lazy_reference.LazyReference(
+            self.cache[key] = nova.db.discovery.lazy_reference.LazyReference(
                 tablename,
                 obj["id"],
                 desimplifier=self

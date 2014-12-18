@@ -1,12 +1,12 @@
 """Simplifier module.
 
 This module contains functions, classes and mix-in that are used for the
-simplifcation of objects, before storing them into the discovery database.
+simplification of objects, before storing them into the discovery database.
 
 """
 
-from utils import merge_dicts
-from utils import is_novabase
+from nova.db.discovery.utils import merge_dicts
+from nova.db.discovery.utils import is_novabase
 
 def extract_adress(obj):
     """Extract an indentifier for the given object: if the object contains an
@@ -20,15 +20,6 @@ def extract_adress(obj):
     except:
         pass
     return result
-
-class RelationshipIdentifier(object):
-    """An object that represent information about relationship between a class
-    and a remote class."""
-
-    def __init__(self, tablename, field_name, field_id):
-        self._tablename = tablename
-        self._field_name = field_name
-        self._field_id = field_id
 
 class ObjectSimplifier(object):
     """A class that is in charge of converting python objects (basic types,

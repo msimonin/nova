@@ -36,17 +36,19 @@ def find_table_name(model):
     return "none"
 
 def is_lazyreference(obj):
-    """Check if the given object is a lazy reference to an instance of a 
+    """Check if the given object is a lazy reference to an instance of a
     NovaBase."""
 
-    value = str(obj) 
+    value = str(obj)
     return value.startswith("Lazy(") and value.endswith(")")
 
 def is_novabase(obj):
     """Check if the given object is an instance of a NovaBase."""
-    
+
     try:
-        return find_table_name(obj.__class__) is not "none" or is_lazyreference(obj)
+        found_table_name = find_table_name(obj.__class__) is not "none"
+        is_lazy = is_lazyreference(obj)
+        return found_table_name or is_lazy
     except:
         pass
 
@@ -75,7 +77,7 @@ class ReloadableRelationMixin(models.ModelBase):
 
     def reload_foreign_keys(self):
         """Reload foreign keys."""
-        
+
         try:
             for field in self._sa_class_manager:
                 state = self._sa_instance_state
@@ -90,10 +92,10 @@ class ReloadableRelationMixin(models.ModelBase):
                     if not field_column.foreign_keys:
                         break
 
-                    for fk in field_column.foreign_keys:
-                        local_field = str(fk.parent).split(".")[-1]
-                        remote_table = fk._colspec.split(".")[-2]
-                        remote_field = fk._colspec.split(".")[-1]
+                    for each in field_column.foreign_keys:
+                        local_field = str(each.parent).split(".")[-1]
+                        remote_table = each._colspec.split(".")[-2]
+                        remote_field = each._colspec.split(".")[-1]
                         try:
 
                             remote_object = None
@@ -142,7 +144,6 @@ class ReloadableRelationMixin(models.ModelBase):
                     else:
                         # Remove the "s" at the end of the tablename
                         remote_table_name = remote_table_name[:-1]
-                        pass
 
                     do_update = False
                     try:
@@ -161,19 +162,12 @@ class ReloadableRelationMixin(models.ModelBase):
                             else:
                                 do_update = True
 
-                    except Exception as e:
+                    except:
                         do_update = True
                         current_local_value = None
 
                     if do_update and hasattr(obj, local_field_name):
                         current_local_value = getattr(obj, local_field_name)
-                        caps_subwords = []
-                        for word in remote_table_name.split("_"):
-                            caps_subwords.append(word.capitalize())
-                        remote_model_name = "".join(caps_subwords)
-                        remote_model_class = get_model_class_from_name(
-                            remote_model_name
-                        )
 
                         self.update_relationship_field(
                             obj,
