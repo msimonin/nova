@@ -141,6 +141,17 @@ class LazyReference:
 
         return getattr(self.get_complex_ref(), item)
 
+    def __setattr__(self, name, value):
+        """This method 'intercepts' affectation to attribute/method on the
+        referenced object: the object is thus loaded from database, and the
+        requested attribute/method is then setted with the given value."""
+
+        if name in ["base", "id", "cache", "desimplifier"]:
+            self.__dict__[name] = value
+        else:
+            return setattr(self.get_complex_ref(), name, value)
+
+
     def __str__(self):
         """This method prevents the loading of the remote object when a
         LazyReference is printed."""

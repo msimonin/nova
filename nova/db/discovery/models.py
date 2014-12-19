@@ -292,6 +292,9 @@ class NovaBase(models.SoftDeleteMixin,
             simplified_object = object_simplifier.simple_cache[key]            
             complex_object = object_simplifier.complex_cache[key]
 
+            if simplified_object["id"] is not None:
+                continue
+
             """Find a new_id for this object"""
             table_next_key = self.next_key(table_name)
             if not table_name in table_next_key_offset:
