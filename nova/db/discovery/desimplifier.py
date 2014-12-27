@@ -22,6 +22,7 @@ class ObjectDesimplifier(object):
 
     def __init__(self):
         """Constructor"""
+
         self.cache = {}
 
     def is_dict_and_has_key(self, obj, key):
@@ -37,9 +38,9 @@ class ObjectDesimplifier(object):
         if self.is_dict_and_has_key(obj, "tablename"):
             table_name = obj["tablename"]
             key = obj["id"]
-            return "%s-%s" % (table_name, str(key))
+            return "%s_%s" % (table_name, str(key))
         else:
-            return "%s-%s" % (hex(id(obj)), hex(id(obj)))
+            return "%s_%s" % (hex(id(obj)), hex(id(obj)))
 
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""

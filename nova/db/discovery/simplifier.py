@@ -186,9 +186,6 @@ class ObjectSimplifier(object):
             if hasattr(obj, "reload_default_values"):
                 obj.reload_default_values()
 
-            if hasattr(obj, "reload_foreign_keys"):
-                obj.reload_foreign_keys()
-
             result = self.extract_complex_object(obj)
 
             if is_novabase(obj):

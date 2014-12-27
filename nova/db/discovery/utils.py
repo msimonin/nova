@@ -6,6 +6,10 @@ discovery database backend.
 """
 
 from oslo.db.sqlalchemy import models
+import traceback
+import riak
+
+dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def merge_dicts(dict1, dict2):
     """Merge two dictionnaries into one dictionnary: the values containeds
@@ -54,6 +58,97 @@ def is_novabase(obj):
 
     return False
 
+def get_single_object(tablename, id, desimplify=True):
+        
+    try:
+        from desimplifier import ObjectDesimplifier
+    except:
+        pass
+
+    if isinstance(id, int):
+        
+        object_desimplifier = ObjectDesimplifier()
+
+        object_bucket = dbClient.bucket(tablename)
+
+        key_as_string = "%d" % (id)
+        value = object_bucket.get(key_as_string)
+        
+        if desimplify:
+            try:
+                return object_desimplifier.desimplify(value.data)
+            except Exception as e:
+                traceback.print_exc()
+                return None
+        else:
+            return value.data
+    else:
+        return None
+
+def get_objects(tablename, desimplify=True):
+
+    key_index_bucket = dbClient.bucket("key_index")
+    fetched = key_index_bucket.get(tablename)
+    keys = fetched.data
+
+    result = []
+    if keys != None:
+        for key in keys:
+            try:
+                key_as_string = "%d" % (key)
+                
+                model_object = get_single_object(
+                    tablename,
+                    key,
+                    desimplify
+                )       
+
+                result = result + [model_object]
+            except Exception as ex:
+                print("problem with key: %s" %(key))
+                traceback.print_exc()
+                pass
+                
+    return result
+
+def get_models_satisfying(tablename, field, value):
+
+    candidates = get_objects(tablename, False)
+    result = []
+    for each in candidates:
+        if each[field] == value:
+            result += [each]
+    return result
+
+class RelationshipModel(object):
+    """Class that will ease the representation of relationships: a can
+    be represented either through a foreign key value or a foreign
+    object."""
+
+    def __init__(self, local_fk_field, local_fk_value, local_object_field, local_object_value, remote_object_field, remote_object_tablename, is_list):
+        """Constructor"""
+
+        self.local_fk_field = local_fk_field
+        self.local_object_field = local_object_field
+        self.remote_object_field = remote_object_field
+        self.local_fk_value = local_fk_value
+        self.local_object_value = local_object_value
+        self.remote_object_tablename = remote_object_tablename
+        self.is_list = is_list
+
+    def __unicode__(self):
+        return "%s@%s <--> %s.%s@%s:%s  [%s]" % (
+            self.local_fk_field,
+            self.local_fk_value,
+            self.local_object_field,
+            self.remote_object_field,
+            self.local_object_value,
+            self.remote_object_tablename,
+            self.is_list
+        )
+
+    def __str__(self):
+     return self.__unicode__()
 
 class ReloadableRelationMixin(models.ModelBase):
     """Mixin that contains several methods that will be in charge of enabling
@@ -75,53 +170,165 @@ class ReloadableRelationMixin(models.ModelBase):
                 except:
                     pass
 
-    def reload_foreign_keys(self):
-        """Reload foreign keys."""
+    def get_relationships(obj):
+        result = []
 
-        try:
-            for field in self._sa_class_manager:
-                state = self._sa_instance_state
-                field_value = getattr(self, field)
+        #print(obj)
 
-                if not field_value is None:
-                    break
+        state = obj._sa_instance_state
 
-                try:
-                    field_column = state.mapper._props[field].columns[0]
+        for field in obj._sa_class_manager:
+            field_object = obj._sa_class_manager[field]
+            field_column = state.mapper._props[field]
 
-                    if not field_column.foreign_keys:
-                        break
+            contain_comparator = hasattr(field_object, "comparator")
+            is_relationship = "relationship" in str(field_object.comparator) if contain_comparator else False
+            if is_relationship:
+                remote_local_pair = field_object.property.local_remote_pairs[0]
 
-                    for each in field_column.foreign_keys:
-                        local_field = str(each.parent).split(".")[-1]
-                        remote_table = each._colspec.split(".")[-2]
-                        remote_field = each._colspec.split(".")[-1]
-                        try:
+                local_fk_field = remote_local_pair[0].name
+                local_fk_value = getattr(obj, local_fk_field)
+                local_object_field = field
+                local_object_value = getattr(obj, local_object_field)
+                remote_object_field = remote_local_pair[1].name
+                remote_object_tablename = str(remote_local_pair[1].table)
+                is_list = field_object.property.uselist
 
-                            remote_object = None
-                            try:
-                                remote_object = getattr(
-                                    self,
-                                    remote_table
-                                )
-                            except:
-                                try:
-                                    if remote_table[-1] == "s":
-                                        remote_table = remote_table[:-1]
-                                        remote_object = getattr(
-                                            self,
-                                            remote_table
-                                        )
-                                except:
-                                    pass
-                            remote_value = getattr(
-                                remote_object,
-                                remote_field
+                result += [RelationshipModel(
+                    local_fk_field,
+                    local_fk_value,
+                    local_object_field,
+                    local_object_value,
+                    remote_object_field,
+                    remote_object_tablename,
+                    is_list
+                )]
+
+        return result
+
+    def update_foreign_keys(self):
+        """Update foreign keys according to local fields' values."""
+
+        from query import RiakModelQuery
+        from models import get_model_classname_from_tablename
+        from models import get_model_class_from_name
+        from lazy_reference import LazyReference
+
+        # local_fk_field <- remote_object
+        if hasattr(self, "metadata"):
+            metadata = self.metadata
+            tablename = self.__tablename__
+
+            if metadata and tablename in metadata.tables:
+                for fk in metadata.tables[tablename].foreign_keys:
+                    local_field_name = str(fk.parent).split(".")[-1]
+                    remote_table_name = fk._colspec.split(".")[-2]
+                    remote_field_name = fk._colspec.split(".")[-1]
+
+                    if hasattr(self, remote_table_name):
+                        pass
+                    else:
+                        """Remove the "s" at the end of the tablename"""
+                        remote_table_name = remote_table_name[:-1]
+                        pass
+
+                    try:
+                        remote_object = getattr(self, remote_table_name)
+                        remote_field_value = getattr(
+                            remote_object, 
+                            remote_field_name
+                        )
+                        setattr(self, local_field_name, remote_field_value)
+                    except Exception as e:
+                        pass
+
+        return 0
+        # local_obj_field <- remote_object[where field = local_fk_field]
+        for each in self.get_relationships():
+            if each.local_fk_value is None and each.local_object_value is None:
+                continue
+
+            if not each.local_fk_value is None:
+                if each.remote_object_field is "id":
+
+                    remote_ref = LazyReference(
+                        each.remote_object_tablename, 
+                        each.local_fk_value
+                    )
+                    setattr(self, each.local_object_field, remote_ref)
+                else:
+                    candidates = get_models_satisfying(
+                        each.remote_object_tablename,
+                        each.remote_object_field,
+                        each.local_fk_value
+                    )
+
+                    lazy_candidates = []
+                    for cand in candidates:
+                        ref = LazyReference(
+                            cand["nova_classname"],
+                            cand["id"]
+                        )
+                        lazy_candidates += [ref]
+                    if not each.is_list:
+                        if len(lazy_candidates) is 0:    
+                            print(("could not find an accurate candidate"
+                            " for (%s, %s) in %s") % (
+                                each.remote_object_tablename,
+                                each.remote_object_field,
+                                each.local_fk_value
+                            ))
+                        else:
+                            setattr(
+                                self,
+                                each.local_object_field,
+                                lazy_candidates[0]
                             )
-                            setattr(self, local_field, remote_value)
-                        except:
-                            pass
-                except:
-                    pass
-        except:
-            pass
+                    else:
+                        setattr(
+                            self,
+                            each.local_object_field,
+                            lazy_candidates
+                        )
+
+    # def update_foreign_keys(self):
+    #     """Update foreign keys according to local fields' values."""
+
+    #     self.process_relationships()
+    #     return 0
+
+    #     if hasattr(self, "metadata"):
+    #         metadata = self.metadata
+    #         tablename = self.__tablename__
+
+    #         if metadata and tablename in metadata.tables:
+    #             for fk in metadata.tables[tablename].foreign_keys:
+    #                 local_field_name = str(fk.parent).split(".")[-1]
+    #                 remote_table_name = fk._colspec.split(".")[-2]
+    #                 remote_field_name = fk._colspec.split(".")[-1]
+
+    #                 if hasattr(self, remote_table_name):
+    #                     pass
+    #                 else:
+    #                     """Remove the "s" at the end of the tablename"""
+    #                     remote_table_name = remote_table_name[:-1]
+    #                     pass
+
+    #                 try:
+    #                     remote_object = getattr(self, remote_table_name)
+    #                     remote_field_value = getattr(
+    #                         remote_object, 
+    #                         remote_field_name
+    #                     )
+    #                     setattr(self, local_field_name, remote_field_value)
+    #                 except Exception as e:
+    #                     traceback.print_exc()
+    #                     print("echec(%s) with %s: %s <- %s.%s" % (
+    #                         e,
+    #                         self,
+    #                         local_field_name,
+    #                         remote_table_name,
+    #                         remote_field_name
+    #                     ))
+    #                     pass
+    #     self.process_relationships()

@@ -199,34 +199,6 @@ class NovaBase(models.SoftDeleteMixin,
 
         self.remove_from_key_index(self.id)
 
-    def update_foreign_keys(self):
-
-        if hasattr(self, "metadata"):
-            metadata = self.metadata
-            tablename = self.__tablename__
-
-            if metadata and tablename in metadata.tables:
-                for fk in metadata.tables[tablename].foreign_keys:
-                    local_field_name = str(fk.parent).split(".")[-1]
-                    remote_table_name = fk._colspec.split(".")[-2]
-                    remote_field_name = fk._colspec.split(".")[-1]
-
-                    if hasattr(self, remote_table_name):
-                        pass
-                    else:
-                        """Remove the "s" at the end of the tablename"""
-                        remote_table_name = remote_table_name[:-1]
-                        pass
-
-                    try:
-                        remote_object = getattr(self, remote_table_name)
-                        remote_field_value = getattr(remote_object, remote_field_name)
-                        setattr(self, local_field_name, remote_field_value)
-                    except Exception as e:
-                        traceback.print_exc()
-                        print("echec(%s) with %s: %s <- %s.%s" % (e, self, local_field_name, remote_table_name, remote_field_name))
-                        pass
-
     def update(self, values, synchronize_session='evaluate'):
         
         primitive = (int, str, bool)

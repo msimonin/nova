@@ -20,9 +20,12 @@
 import datetime
 
 # RIAK
+import riak
+from nova.db.discovery.utils import get_objects
+from nova.db.discovery.utils import is_novabase
+from nova.db.discovery.utils import find_table_name
 import itertools
 import traceback
-import riak
 import inspect
 from sqlalchemy.util._collections import KeyedTuple
 from sqlalchemy.sql.expression import BinaryExpression
@@ -152,57 +155,6 @@ class RiakModelQuery:
             if base_model:
                 self._models += [Selection(base_model, "*", is_hidden=True)]
 
-
-    def get_single_object(self, model, id):
-            
-        try:
-            from desimplifier import ObjectDesimplifier
-        except:
-            pass
-
-        if isinstance(id, int):
-            
-            object_desimplifier = ObjectDesimplifier()
-            
-            table_name = self.find_table_name(model)
-            object_bucket = dbClient.bucket(table_name)
-
-            key_as_string = "%d" % (id)
-            value = object_bucket.get(key_as_string)
-            
-            try:
-                return object_desimplifier.desimplify(value.data)
-            except Exception as e:
-                traceback.print_exc()
-                return None
-        else:
-            return None
-
-    def get_objects(self, model):
-
-        table_name = self.find_table_name(model)
-            
-        key_index_bucket = dbClient.bucket("key_index")
-        fetched = key_index_bucket.get(table_name)
-        keys = fetched.data
-
-        result = []
-        if keys != None:
-            for key in keys:
-                try:
-                    key_as_string = "%d" % (key)
-                    
-                    model_object = self.get_single_object(model, key)       
-
-                    result = result + [model_object]
-                except Exception as ex:
-                    print("problem with key: %s" %(key))
-                    traceback.print_exc()
-                    pass
-                    
-        return result
-
-
     def find_table_name(self, model):
 
         """This function return the name of the given model as a String. If the
@@ -231,96 +183,6 @@ class RiakModelQuery:
         """This function constructs the rows that corresponds to the current query.
         :return: a list of row, according to sqlalchemy expectation
         """
-
-        def load_relationship(object):
-
-            """ Check if the object contains relationships. If so, it loads related objects according to sqlalchemy
-            expectation.
-
-            :param object: object that will be checked
-            :return:the given object, loaded with its potential relationships
-            """
-
-            attributes = []
-            if hasattr(object, "_sa_class_manager"):
-                attributes = object._sa_class_manager
-
-            for attribute in attributes:
-                is_relationship_field = False
-
-                local_join_field = None
-                remote_join_field = None
-                remote_join_class = None
-
-                # relationship_type has several values:
-                #   * 0 (Many -> one)
-                #   * 1 (One -> Many)
-                relationship_type = None
-
-                try:
-                    for fk in object.metadata._fk_memos:
-
-                        ########################################################
-                        # Many -> one relationship
-                        ########################################################
-                        if fk[0] == attribute:
-                            if "%s." % (attribute) in str(attributes[attribute].expression.right):
-                                local_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                remote_join_class = attribute
-                                remote_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                pass
-                            else:
-                                local_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                remote_join_class = attribute
-                                remote_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                pass
-
-                            relationship_type = 0
-                            is_relationship_field = True
-
-                        ########################################################
-                        # One -> Many relationship
-                        ########################################################
-                        elif fk[0] == object.__tablename__:
-
-                            if hasattr(attributes[attribute].expression, "right"):
-                                if "%s." % (attribute) not in str(attributes[attribute].expression.right):
-                                    local_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                    remote_join_class = str(attributes[attribute].expression.right).split(".")[-2]
-                                    remote_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                    pass
-                                else:
-                                    local_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                    remote_join_class = str(attributes[attribute].expression.left).split(".")[-2]
-                                    remote_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                    pass
-                            else:
-                                return object
-                                pass
-                            relationship_type = 1
-                            is_relationship_field = True
-                except:
-                    is_relationship_field = False
-
-                if is_relationship_field:
-                    if relationship_type == 0:
-                        entity_class = globals()[attribute.capitalize()]
-                    elif relationship_type == 1:
-                        entity_class = globals()[remote_join_class.capitalize()]
-
-                    related_objects = []
-                    objects = RiakModelQuery(entity_class).get_objects(entity_class)
-                    for remote_object in objects:
-                        if getattr(object, local_join_field) == getattr(remote_object, remote_join_field):
-                            if (relationship_type == 0):
-                                setattr(object, attribute, remote_object)
-                            elif relationship_type == 1:
-                                related_objects += [remote_object]
-
-                    if relationship_type == 1:
-                        setattr(object, attribute, related_objects)
-
-            return object
 
         def extract_sub_row(row, selectables):
 
@@ -414,7 +276,9 @@ class RiakModelQuery:
         # construct the cartesian product
         list_results = []
         for selectable in model_set:
-            list_results += [map(load_relationship, self.get_objects(selectable._model))]
+            tablename = find_table_name(selectable._model)
+            print(tablename)
+            list_results += [get_objects(tablename)]
             # list_results += [self.get_objects(model)]
 
         # construct the cartesian product
@@ -462,7 +326,7 @@ class RiakModelQuery:
                         key = current_table_name.capitalize()
                         value = None
                         print("%s[%s]" % (row, key))
-                        if hasattr(row, key):
+                        if not is_novabase(row) and hasattr(row, key):
                             value = getattr(row, key)
                         else:
                             value = row
