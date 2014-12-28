@@ -7,9 +7,12 @@ desimplification of objects, before sending them to the services of nova.
 
 import datetime
 import netaddr
+import uuid
 import pytz
 import nova.db.discovery.models
 import nova.db.discovery.lazy_reference
+
+caches = {}
 
 def convert_to_camelcase(word):
     """Convert the given word into camelcase naming convention."""
@@ -20,10 +23,16 @@ class ObjectDesimplifier(object):
     into an object containing values understandable by services composing
     Nova."""
 
-    def __init__(self):
+    def __init__(self, request_uuid=uuid.uuid1()):
         """Constructor"""
 
-        self.cache = {}
+        # print("Desimplifier => %s" % (request_uuid))
+        self.request_uuid = request_uuid if request_uuid is not None else uuid.uuid1()
+        if not caches.has_key(self.request_uuid):
+            caches[self.request_uuid] = {}
+        self.cache = caches[self.request_uuid]
+        # if len(caches) > 1:
+        #     1/0
 
     def is_dict_and_has_key(self, obj, key):
         """Check if the given object is a dict which contains the given key."""
@@ -60,7 +69,8 @@ class ObjectDesimplifier(object):
             self.cache[key] = nova.db.discovery.lazy_reference.LazyReference(
                 tablename,
                 obj["id"],
-                desimplifier=self
+                desimplifier=self,
+                request_uuid=self.request_uuid
             )
 
         return self.cache[key]

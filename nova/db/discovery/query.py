@@ -36,6 +36,7 @@ try:
 except:
     pass
 import collections
+import uuid
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
@@ -243,6 +244,8 @@ class RiakModelQuery:
                 return getattr(row, model_name)
 
 
+        request_uuid = uuid.uuid1()
+
         labels = []
         columns = set([])
         rows = []
@@ -278,7 +281,7 @@ class RiakModelQuery:
         for selectable in model_set:
             tablename = find_table_name(selectable._model)
             print(tablename)
-            list_results += [get_objects(tablename)]
+            list_results += [get_objects(tablename, request_uuid=request_uuid)]
             # list_results += [self.get_objects(model)]
 
         # construct the cartesian product
@@ -302,21 +305,14 @@ class RiakModelQuery:
         showable_selection = [x for x in self._models if (not x.is_hidden) or x._is_function]
 
         if self.all_selectable_are_functions():
-            # functions = [x for x in self._models if (not x.is_hidden) or x._is_function]
-            # hiddens = [x for x in self._models if x.is_hidden]
-            # print(">1> %s" % (functions))
-            # print(">2> %s" % (showable_selection))
-            # print(">> %s" % (rows))
             final_row = []
             for selection in showable_selection:
                 value = selection._function._function(rows)
                 final_row += [value]
-                # print("inserting %s in %s" % (value, final_row))
             return [final_row]
         else:
             for row in rows:
                 final_row = []
-                # print(showable_selection)
                 for selection in showable_selection:
                     if selection._is_function:
                         value = selection._function._function(rows)
@@ -558,7 +554,8 @@ class RiakModelQuery:
             for key in values:
                 data[key] = values[key]
 
-            object_desimplifier = ObjectDesimplifier()
+            request_uuid = uuid.uuid1()
+            object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
             
             try:
                 desimplified_object = object_desimplifier.desimplify(data)

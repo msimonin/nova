@@ -112,8 +112,11 @@ class ObjectSimplifier(object):
     def novabase_simplify(self, obj, skip_complex_processing=False):
         """Simplify a NovaBase object."""
 
+        import uuid
+
         if not self.already_processed(obj):
 
+            request_uuid = obj.request_uuid if hasattr(obj, "request_uuid") else uuid.uuid1()
             obj.update_foreign_keys()
             key = self.get_cache_key(obj)
 

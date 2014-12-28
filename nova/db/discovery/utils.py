@@ -8,6 +8,7 @@ discovery database backend.
 from oslo.db.sqlalchemy import models
 import traceback
 import riak
+import uuid
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
@@ -58,7 +59,7 @@ def is_novabase(obj):
 
     return False
 
-def get_single_object(tablename, id, desimplify=True):
+def get_single_object(tablename, id, desimplify=True, request_uuid=None):
         
     try:
         from desimplifier import ObjectDesimplifier
@@ -67,7 +68,7 @@ def get_single_object(tablename, id, desimplify=True):
 
     if isinstance(id, int):
         
-        object_desimplifier = ObjectDesimplifier()
+        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
 
         object_bucket = dbClient.bucket(tablename)
 
@@ -85,7 +86,7 @@ def get_single_object(tablename, id, desimplify=True):
     else:
         return None
 
-def get_objects(tablename, desimplify=True):
+def get_objects(tablename, desimplify=True, request_uuid=None):
 
     key_index_bucket = dbClient.bucket("key_index")
     fetched = key_index_bucket.get(tablename)
@@ -100,7 +101,8 @@ def get_objects(tablename, desimplify=True):
                 model_object = get_single_object(
                     tablename,
                     key,
-                    desimplify
+                    desimplify,
+                    request_uuid
                 )       
 
                 result = result + [model_object]
@@ -111,9 +113,9 @@ def get_objects(tablename, desimplify=True):
                 
     return result
 
-def get_models_satisfying(tablename, field, value):
+def get_models_satisfying(tablename, field, value, request_uuid=None):
 
-    candidates = get_objects(tablename, False)
+    candidates = get_objects(tablename, False, request_uuid=request_uuid)
     result = []
     for each in candidates:
         if each[field] == value:
@@ -206,7 +208,7 @@ class ReloadableRelationMixin(models.ModelBase):
 
         return result
 
-    def update_foreign_keys(self):
+    def update_foreign_keys(self, request_uuid=uuid.uuid1()):
         """Update foreign keys according to local fields' values."""
 
         from query import RiakModelQuery
@@ -242,8 +244,15 @@ class ReloadableRelationMixin(models.ModelBase):
                     except Exception as e:
                         pass
 
-        return 0
+        # return 0
         # local_obj_field <- remote_object[where field = local_fk_field]
+        try:
+            from desimplifier import ObjectDesimplifier
+        except:
+            pass
+        
+        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
+
         for each in self.get_relationships():
             if each.local_fk_value is None and each.local_object_value is None:
                 continue
@@ -253,21 +262,26 @@ class ReloadableRelationMixin(models.ModelBase):
 
                     remote_ref = LazyReference(
                         each.remote_object_tablename, 
-                        each.local_fk_value
+                        each.local_fk_value,
+                        request_uuid,
+                        object_desimplifier
                     )
                     setattr(self, each.local_object_field, remote_ref)
                 else:
                     candidates = get_models_satisfying(
                         each.remote_object_tablename,
                         each.remote_object_field,
-                        each.local_fk_value
+                        each.local_fk_value,
+                        request_uuid=request_uuid
                     )
 
                     lazy_candidates = []
                     for cand in candidates:
                         ref = LazyReference(
                             cand["nova_classname"],
-                            cand["id"]
+                            cand["id"],
+                            request_uuid,
+                            object_desimplifier
                         )
                         lazy_candidates += [ref]
                     if not each.is_list:
@@ -279,17 +293,22 @@ class ReloadableRelationMixin(models.ModelBase):
                                 each.local_fk_value
                             ))
                         else:
-                            setattr(
-                                self,
-                                each.local_object_field,
-                                lazy_candidates[0]
-                            )
+                            self.__dict__[each.local_object_field] = lazy_candidates[0]
+                            # setattr(
+                            #     self,
+                            #     each.local_object_field,
+                            #     lazy_candidates[0]
+                            # )
+                            pass
                     else:
-                        setattr(
-                            self,
-                            each.local_object_field,
-                            lazy_candidates
-                        )
+                        for cand in lazy_candidates:
+                            # self.__dict__[each.local_object_field] = lazy_candidates[0]
+                            setattr(
+                                cand,
+                                each.remote_object_field,
+                                each.local_fk_value
+                            )
+                        pass
 
     # def update_foreign_keys(self):
     #     """Update foreign keys according to local fields' values."""
