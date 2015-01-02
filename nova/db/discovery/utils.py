@@ -72,12 +72,13 @@ def get_single_object(tablename, id, desimplify=True, request_uuid=None):
 
         object_bucket = dbClient.bucket(tablename)
 
-        key_as_string = "%d" % (id)
-        value = object_bucket.get(key_as_string)
+        key = "%d" % (id)
+        value = object_bucket.get(key)
         
         if desimplify:
             try:
-                return object_desimplifier.desimplify(value.data)
+                model_object = object_desimplifier.desimplify(value.data)
+                return model_object
             except Exception as e:
                 traceback.print_exc()
                 return None
@@ -103,9 +104,9 @@ def get_objects(tablename, desimplify=True, request_uuid=None):
                     key,
                     desimplify,
                     request_uuid
-                )       
+                ) 
 
-                result = result + [model_object]
+                result += [model_object]
             except Exception as ex:
                 print("problem with key: %s" %(key))
                 traceback.print_exc()
@@ -267,7 +268,9 @@ class ReloadableRelationMixin(models.ModelBase):
                         object_desimplifier
                     )
                     setattr(self, each.local_object_field, remote_ref)
+                    # self.__dict__[each.local_object_field] = remote_ref
                 else:
+                    continue
                     candidates = get_models_satisfying(
                         each.remote_object_tablename,
                         each.remote_object_field,
@@ -293,12 +296,12 @@ class ReloadableRelationMixin(models.ModelBase):
                                 each.local_fk_value
                             ))
                         else:
-                            self.__dict__[each.local_object_field] = lazy_candidates[0]
-                            # setattr(
-                            #     self,
-                            #     each.local_object_field,
-                            #     lazy_candidates[0]
-                            # )
+                            # self.__dict__[each.local_object_field] = lazy_candidates[0]
+                            setattr(
+                                self,
+                                each.local_object_field,
+                                lazy_candidates[0]
+                            )
                             pass
                     else:
                         for cand in lazy_candidates:
@@ -308,6 +311,7 @@ class ReloadableRelationMixin(models.ModelBase):
                                 each.remote_object_field,
                                 each.local_fk_value
                             )
+                            pass
                         pass
 
     # def update_foreign_keys(self):

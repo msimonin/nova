@@ -19,6 +19,8 @@
 SQLAlchemy models for nova data.
 """
 
+import uuid
+
 from oslo.config import cfg
 from oslo.db.sqlalchemy import models
 from oslo.utils import timeutils
@@ -190,7 +192,7 @@ class NovaBase(models.SoftDeleteMixin,
         key_as_string = "%d" % (self.id)
         exisiting_object = myBucket.get(key_as_string)
 
-        object_simplifier = ObjectSimplifier()
+        object_simplifier = ObjectSimplifier(uuid.uuid1())
         simplified_object = object_simplifier.simplify(self)
 
         """Update value of the object"""
@@ -199,8 +201,8 @@ class NovaBase(models.SoftDeleteMixin,
 
         self.remove_from_key_index(self.id)
 
-    def update(self, values, synchronize_session='evaluate'):
-        
+    def update(self, values, synchronize_session='evaluate', request_uuid=uuid.uuid1(), do_save=True):
+
         primitive = (int, str, bool)
 
         """Set default values"""
@@ -232,8 +234,12 @@ class NovaBase(models.SoftDeleteMixin,
 
         self.update_foreign_keys()
 
+        if do_save:
+            self.save(request_uuid=request_uuid)
+        return self
 
-    def save(self, session=None):
+
+    def save(self, session=None, request_uuid=uuid.uuid1()):
         
         self.update_foreign_keys()
 
@@ -251,7 +257,7 @@ class NovaBase(models.SoftDeleteMixin,
         converted into "JSON like" representation, and nested objects are
         extracted. It results in a list of object that will be stored in the
         database."""
-        object_simplifier = ObjectSimplifier()
+        object_simplifier = ObjectSimplifier(request_uuid)
         simplified_object = object_simplifier.simplify(target)
 
         table_next_key_offset = {}
@@ -262,7 +268,8 @@ class NovaBase(models.SoftDeleteMixin,
             table_name = get_model_tablename_from_classname(classname)
 
             simplified_object = object_simplifier.simple_cache[key]            
-            complex_object = object_simplifier.complex_cache[key]
+            complex_object = object_simplifier.complex_cache[key]          
+            target_object = object_simplifier.target_cache[key]
 
             if simplified_object["id"] is not None:
                 continue
@@ -278,6 +285,7 @@ class NovaBase(models.SoftDeleteMixin,
             """Assign this id to the object"""
             simplified_object["id"] = new_id
             complex_object["id"] = new_id
+            target_object.id = new_id
 
             pass
 
@@ -302,7 +310,7 @@ class NovaBase(models.SoftDeleteMixin,
                 existing_object = myBucket.get(str(current_object["id"])).data
                 current_object = merge_dict(existing_object, current_object)
 
-            object_simplifier_datetime = ObjectSimplifier()
+            object_simplifier_datetime = ObjectSimplifier(request_uuid)
 
             if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
                 current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
@@ -312,7 +320,7 @@ class NovaBase(models.SoftDeleteMixin,
 
             
             try:
-                local_object_simplifier = ObjectSimplifier()
+                local_object_simplifier = ObjectSimplifier(request_uuid)
                 corrected_object = local_object_simplifier.simplify(current_object)
                 fetched = myBucket.new(str(current_object["id"]), data=corrected_object)
                 fetched.store()
@@ -321,6 +329,8 @@ class NovaBase(models.SoftDeleteMixin,
                 print("Failed to store following object: %s because of %s, becoming %s" % (current_object, e, corrected_object))
                 pass
             print("<<<<<<<<<<<<<< done (storing in %s: {%s})" %(table_name, self.id))
+
+        return self
 
 class Service(BASE, NovaBase):
     """Represents a running service on a host."""

@@ -82,7 +82,6 @@ class ObjectComparator:
         between the two implementations. This class will target the creation of runnable objects."""
 
         def __init__(self, callable_a, callable_b, call_name, label_a, label_b, return_first):
-            # print("##create a function wrapper")
             self.callable_a = callable_a
             self.callable_b = callable_b
             self.call_name = call_name
@@ -93,7 +92,11 @@ class ObjectComparator:
         def __call__(self, *args, **kwargs):
 
             result_callable_a = self.callable_a(*args, **kwargs)
+            # try:
             result_callable_b = self.callable_b(*args, **kwargs)
+            # except:
+            #     result_callable_b = "ERROR"
+            #     pass
 
             pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
             pretty_print_callable_b = "%s.%s => [%s]" % (self.label_b, self.call_name, str(result_callable_b))
@@ -121,7 +124,7 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = ObjectComparator(mysql_api, discovery_api, "[MySQL_impl    ]", "[Discovery_impl]", False)
+IMPL = ObjectComparator(mysql_api, discovery_api, "[ MySQL_impl    ]", "[ Discovery_impl]", False)
 
 class DualImpl:
     def __init__(self):

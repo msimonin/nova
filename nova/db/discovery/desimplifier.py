@@ -44,12 +44,12 @@ class ObjectDesimplifier(object):
     def get_key(self, obj):
         """Returns a unique key for the given object."""
 
-        if self.is_dict_and_has_key(obj, "tablename"):
-            table_name = obj["tablename"]
+        if self.is_dict_and_has_key(obj, "nova_classname"):
+            table_name = obj["nova_classname"]
             key = obj["id"]
-            return "%s_%s" % (table_name, str(key))
+            return "%s_%s_%s" % (table_name, str(key), self.request_uuid)
         else:
-            return "%s_%s" % (hex(id(obj)), hex(id(obj)))
+            return "%s_%s_%s" % (hex(id(obj)), hex(id(obj)), self.request_uuid)
 
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""
@@ -72,7 +72,6 @@ class ObjectDesimplifier(object):
                 desimplifier=self,
                 request_uuid=self.request_uuid
             )
-
         return self.cache[key]
 
 

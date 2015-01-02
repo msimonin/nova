@@ -175,13 +175,13 @@ class LazyReference:
         """This method prevents the loading of the remote object when a
         LazyReference is printed."""
 
-        return "Lazy(%s:%d)" % (self.get_key(), self.version)
+        return "Lazy(%s:%s:%d)" % (self.get_key(), self.base, self.version)
 
     def __repr__(self):
         """This method prevents the loading of the remote object when a
         LazyReference is printed."""
 
-        return "Lazy(%s)" % (self.get_key())
+        return "Lazy(%s:%s:%d)" % (self.get_key(), self.base, self.version)
 
     def __nonzero__(self):
         """This method is required by some services of OpenStack."""

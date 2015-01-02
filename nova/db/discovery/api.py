@@ -1376,9 +1376,11 @@ def fixed_ip_get_by_instance(context, instance_uuid):
 
     if not result:
         raise exception.FixedIpNotFoundForInstance(instance_uuid=instance_uuid)
-    # TODO (jonathan): quick fix
+    # TODO(Jonathan): quick fix
+    print("debugging discovery: result: %s" % (str(result)))
     return [x[0] for x in result]
     # return result
+
 
 
 @require_admin_context
@@ -1423,6 +1425,12 @@ def fixed_ips_by_virtual_interface(context, vif_id):
 def fixed_ip_update(context, address, values):
     session = get_session()
     with session.begin():
+
+        fo = open("/opt/logs/db_api.log", "a")
+        fo.write("[NET] api.fixed_ip_update() (1-a): address: %s\n" % (str(address)))
+        fo.write("[NET] api.fixed_ip_update() (1-b): values: %s\n" % (str(values)))
+        fo.close()
+
         _fixed_ip_get_by_address(context, address, session=session).\
                                  update(values)
 
@@ -1635,7 +1643,7 @@ def instance_create(context, values):
     if info_cache is not None:
         instance_ref['info_cache'].update(info_cache)
     security_groups = values.pop('security_groups', [])
-    instance_ref.update(values)
+    instance_ref.update(values, do_save=False)
 
     def _get_sec_group_models(session, security_groups):
         models = []
@@ -1800,8 +1808,6 @@ def _instances_fill_metadata(context, instances,
 
     sys_meta = collections.defaultdict(list)
     if 'system_metadata' in manual_joins:
-        kiki = _instance_system_metadata_get_multi(context, uuids)
-        print(">> %s" % (uuids))
         for row in _instance_system_metadata_get_multi(context, uuids):
             sys_meta[row['instance_uuid']].append(row)
 
@@ -2396,7 +2402,7 @@ def _instance_update(context, instance_uuid, values, copy_old_instance=False,
                                                session)
 
         _handle_objects_related_type_conversions(values)
-        instance_ref.update(values)
+        instance_ref.update(values, do_save=False)
         session.add(instance_ref)
 
     return (old_instance_ref, instance_ref)
@@ -2821,13 +2827,20 @@ def network_get_associated_fixed_ips(context, network_id, host=None):
                           models.Instance.updated_at,
                           models.Instance.created_at,
                           models.FixedIp.allocated,
-                          models.FixedIp.leased).\
-                          filter(models.FixedIp.deleted == 0).\
-                          filter(models.FixedIp.network_id == network_id).\
-                          join((models.VirtualInterface, vif_and)).\
-                          join((models.Instance, inst_and)).\
-                          filter(models.FixedIp.instance_uuid != None).\
-                          filter(models.FixedIp.virtual_interface_id != None)
+                          models.FixedIp.leased)
+    query = query.join(models.VirtualInterface).join(models.Instance)
+    query = query.filter(models.FixedIp.deleted == 0)
+    query = query.filter(models.FixedIp.network_id == network_id)
+    query = query.join((models.VirtualInterface, vif_and))
+    query = query.filter(models.FixedIp.instance_uuid != None)
+    query = query.filter(models.FixedIp.virtual_interface_id != None)
+
+    # query = query.filter(models.FixedIp.deleted == 0).\
+    #                filter(models.FixedIp.network_id == network_id).\
+    #                join((models.VirtualInterface, vif_and)).\
+    #                join((models.Instance, inst_and)).\
+    #                filter(models.FixedIp.instance_uuid != None).\
+    #                filter(models.FixedIp.virtual_interface_id != None)
     if host:
         query = query.filter(models.Instance.host == host)
     result = query.all()
@@ -2844,6 +2857,7 @@ def network_get_associated_fixed_ips(context, network_id, host=None):
         cleaned['instance_created'] = datum[7]
         cleaned['allocated'] = datum[8]
         cleaned['leased'] = datum[9]
+        cleaned['default_route'] = datum[10] is not None 
         data.append(cleaned)
     return data
 
@@ -5719,9 +5733,9 @@ def action_event_get_by_id(context, action_id, event_id):
 def ec2_instance_create(context, instance_uuid, id=None):
     """Create ec2 compatible instance by provided uuid."""
     ec2_instance_ref = models.InstanceIdMapping()
-    ec2_instance_ref.update({'uuid': instance_uuid})
+    ec2_instance_ref.update({'uuid': instance_uuid}, do_save=False)
     if id is not None:
-        ec2_instance_ref.update({'id': id})
+        ec2_instance_ref.update({'id': id}, do_save=False)
 
     ec2_instance_ref.save()
 

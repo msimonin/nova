@@ -280,9 +280,8 @@ class RiakModelQuery:
         list_results = []
         for selectable in model_set:
             tablename = find_table_name(selectable._model)
-            print(tablename)
-            list_results += [get_objects(tablename, request_uuid=request_uuid)]
-            # list_results += [self.get_objects(model)]
+            objects = get_objects(tablename, request_uuid=request_uuid)
+            list_results += [objects]
 
         # construct the cartesian product
         cartesian_product = []
@@ -321,12 +320,10 @@ class RiakModelQuery:
                         current_table_name = self.find_table_name(selection._model)
                         key = current_table_name.capitalize()
                         value = None
-                        print("%s[%s]" % (row, key))
                         if not is_novabase(row) and hasattr(row, key):
                             value = getattr(row, key)
                         else:
                             value = row
-                        print(value)
                         if value is not None:
                             if selection._attributes != "*":
                                 final_row += [getattr(value, selection._attributes)]
