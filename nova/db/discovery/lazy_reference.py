@@ -7,11 +7,12 @@ will be evaluated only when some functions or properties will be called.
 """
 
 import riak
+import uuid
 
 from nova.db.discovery.models import get_model_class_from_name
 from nova.db.discovery.models import get_model_classname_from_tablename
 
-dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
+RIAK_CLIENT = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def now_in_ms():
     return int(round(time.time() * 1000))
@@ -25,16 +26,25 @@ class LazyReference:
     populating relationships even when not required, we load them "only" when
     it is used!"""
 
-    def __init__(self, base, id, desimplifier=None):
+    def __init__(self, base, id, request_uuid, desimplifier):
         """Constructor"""
+
+        import nova.db.discovery.desimplifier as desimplifier_module
+
+        caches = desimplifier_module.CACHES
 
         self.base = base
         self.id = id
-        self.cache = {}
+        self.version = -1
+
+        self.request_uuid = request_uuid if request_uuid is not None else uuid.uuid1()
+        if not caches.has_key(self.request_uuid):
+            caches[self.request_uuid] = {}
+        self.cache = caches[self.request_uuid]
 
         if desimplifier is None:
             from desimplifier import ObjectDesimplifier
-            self.desimplifier = ObjectDesimplifier()
+            self.desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
         else:
             self.desimplifier = desimplifier
 
@@ -85,7 +95,11 @@ class LazyReference:
             simplified_value = self.desimplifier.desimplify(obj[key])
             try:
                 if simplified_value is not None:
-                    setattr(current_model, key, self.desimplifier.desimplify(obj[key]))
+                    setattr(
+                        current_model,
+                        key,
+                        self.desimplifier.desimplify(obj[key])
+                    )
                 else:
                     setattr(current_model, key, obj[key])
             except Exception as e:
@@ -101,7 +115,7 @@ class LazyReference:
             current_model.project_id = obj["project_id"]
 
         # Update foreign keys
-        current_model.update_foreign_keys()
+        current_model.update_foreign_keys(self.request_uuid)
 
         return current_model
 
@@ -109,9 +123,11 @@ class LazyReference:
         """Load the referenced object from the database. The result will be
         cached, so that next call will not create any database request."""
 
+        self.version = 0
+
         key = self.get_key()
 
-        key_index_bucket = dbClient.bucket(self.base)
+        key_index_bucket = RIAK_CLIENT.bucket(self.base)
         fetched = key_index_bucket.get(str(self.id))
         obj = fetched.data
 
@@ -141,17 +157,31 @@ class LazyReference:
 
         return getattr(self.get_complex_ref(), item)
 
+    def __setattr__(self, name, value):
+        """This method 'intercepts' affectation to attribute/method on the
+        referenced object: the object is thus loaded from database, and the
+        requested attribute/method is then setted with the given value."""
+
+        if name in ["base", "id", "cache", "desimplifier", "request_uuid",
+        "uuid", "version"]:
+            self.__dict__[name] = value
+        else:
+            setattr(self.get_complex_ref(), name, value)
+            self.version += 1
+            return self
+
+
     def __str__(self):
         """This method prevents the loading of the remote object when a
         LazyReference is printed."""
 
-        return "Lazy(%s)" % (self.get_key())
+        return "Lazy(%s:%s:%d)" % (self.get_key(), self.base, self.version)
 
     def __repr__(self):
         """This method prevents the loading of the remote object when a
         LazyReference is printed."""
 
-        return "Lazy(%s)" % (self.get_key())
+        return "Lazy(%s:%s:%d)" % (self.get_key(), self.base, self.version)
 
     def __nonzero__(self):
         """This method is required by some services of OpenStack."""

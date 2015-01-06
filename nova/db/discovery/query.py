@@ -20,9 +20,12 @@
 import datetime
 
 # RIAK
+import riak
+from nova.db.discovery.utils import get_objects
+from nova.db.discovery.utils import is_novabase
+from nova.db.discovery.utils import find_table_name
 import itertools
 import traceback
-import riak
 import inspect
 from sqlalchemy.util._collections import KeyedTuple
 from sqlalchemy.sql.expression import BinaryExpression
@@ -33,6 +36,7 @@ try:
 except:
     pass
 import collections
+import uuid
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
 
@@ -53,432 +57,19 @@ class Selection:
     def __repr__(self):
         return self.__str__()
 
-class Function:
-
-    def collect_field(self, rows, field):
-        if rows is None:
-            rows = []
-        if "." in field:
-            field = field.split(".")[1]
-        result = [ getattr(row, field) for row in rows]
-        return result
-
-    def count(self, rows):
-        collected_field_values = self.collect_field(rows, self._field)
-        return len(collected_field_values)
-
-    def sum(self, rows):
-        result = 0
-        collected_field_values = self.collect_field(rows, self._field)
-        try:
-            result = sum(collected_field_values)
-        except:
-            pass
-        return result
-
-
-
-    def __init__(self, name, field):
-        self._name = name
-        if name == "count":
-            self._function = self.count
-        elif name == "sum":
-            self._function = self.sum
-        else:
-            self._function = self.sum
-        self._field = field
-
-
-import re
-
-def extract_models(l):
-    already_processed = set()
-    result = []
-    for selectable in [x for x in l if not x._is_function]:
-        if not selectable._model in already_processed:
-            already_processed.add(selectable._model)
-            result += [selectable]
-    return result
-
-
-class RiakModelQuery:
-
-    _funcs = []
-    _initial_models = []
-    _models = []
-    _criterions = []
-
-    def all_selectable_are_functions(self):
-        return all(x._is_function for x in [y for y in self._models if not y.is_hidden])
-
-    def __init__(self, *args, **kwargs):
-        self._models = []
-        self._criterions = []
-        self._funcs = []
-
-        base_model = None
-        if kwargs.has_key("base_model"):
-            base_model = kwargs.get("base_model")
-        for arg in args:
-            if "count" in str(arg) or "sum" in str(arg):
-                function_name = re.sub("\(.*\)", "", str(arg))
-                field_id = re.sub("\)", "", re.sub(".*\(", "", str(arg)))
-                self._models += [Selection(None, None, is_function=True, function=Function(function_name, field_id))]
-            elif self.find_table_name(arg) != "none":
-                arg_as_text = "%s" % (arg)
-                attribute_name = "*"
-                if not hasattr(arg, "_sa_class_manager"):
-                    if(len(arg_as_text.split(".")) > 1):
-                        attribute_name = arg_as_text.split(".")[-1]
-                    if hasattr(arg, "_sa_class_manager"):
-                        self._models += [Selection(arg, attribute_name)]
-                    elif hasattr(arg, "class_"):
-                        self._models += [Selection(arg.class_, attribute_name)]
-                else:
-                    self._models += [Selection(arg, "*")]
-                    pass
-            elif isinstance(arg, Selection):
-                self._models += [arg]
-            elif isinstance(arg, Function):
-                self._models += [Selection(None, None, True, arg)]
-                self._funcs += [arg]
-            elif isinstance(arg, BinaryExpression):
-                self._criterions += [arg]
-            else:
-                pass
-
-
-        if self.all_selectable_are_functions():
-            if base_model:
-                self._models += [Selection(base_model, "*", is_hidden=True)]
-
-
-    def get_single_object(self, model, id):
-            
-        try:
-            from desimplifier import ObjectDesimplifier
-        except:
-            pass
-
-        if isinstance(id, int):
-            
-            object_desimplifier = ObjectDesimplifier()
-            
-            table_name = self.find_table_name(model)
-            object_bucket = dbClient.bucket(table_name)
-
-            key_as_string = "%d" % (id)
-            value = object_bucket.get(key_as_string)
-            
-            try:
-                return object_desimplifier.desimplify(value.data)
-            except Exception as e:
-                traceback.print_exc()
-                return None
-        else:
-            return None
-
-    def get_objects(self, model):
-
-        table_name = self.find_table_name(model)
-            
-        key_index_bucket = dbClient.bucket("key_index")
-        fetched = key_index_bucket.get(table_name)
-        keys = fetched.data
-
-        result = []
-        if keys != None:
-            for key in keys:
-                try:
-                    key_as_string = "%d" % (key)
-                    
-                    model_object = self.get_single_object(model, key)       
-
-                    result = result + [model_object]
-                except Exception as ex:
-                    print("problem with key: %s" %(key))
-                    traceback.print_exc()
-                    pass
-                    
-        return result
-
-
-    def find_table_name(self, model):
-
-        """This function return the name of the given model as a String. If the
-        model cannot be identified, it returns "none".
-        :param model: a model object candidate
-        :return: the table name or "none" if the object cannot be identified
-        """
-
-        if hasattr(model, "__tablename__"):
-            return model.__tablename__
-
-        if hasattr(model, "table"):
-            return model.table.name
-
-        if hasattr(model, "class_"):
-            return model.class_.__tablename__
-
-        if hasattr(model, "clauses"):
-            for clause in model.clauses:
-                return self.find_table_name(clause)
-
-        return "none"
-
-    def construct_rows(self):
-
-        """This function constructs the rows that corresponds to the current query.
-        :return: a list of row, according to sqlalchemy expectation
-        """
-
-        def load_relationship(object):
-
-            """ Check if the object contains relationships. If so, it loads related objects according to sqlalchemy
-            expectation.
-
-            :param object: object that will be checked
-            :return:the given object, loaded with its potential relationships
-            """
-
-            attributes = []
-            if hasattr(object, "_sa_class_manager"):
-                attributes = object._sa_class_manager
-
-            for attribute in attributes:
-                is_relationship_field = False
-
-                local_join_field = None
-                remote_join_field = None
-                remote_join_class = None
-
-                # relationship_type has several values:
-                #   * 0 (Many -> one)
-                #   * 1 (One -> Many)
-                relationship_type = None
-
-                try:
-                    for fk in object.metadata._fk_memos:
-
-                        ########################################################
-                        # Many -> one relationship
-                        ########################################################
-                        if fk[0] == attribute:
-                            if "%s." % (attribute) in str(attributes[attribute].expression.right):
-                                local_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                remote_join_class = attribute
-                                remote_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                pass
-                            else:
-                                local_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                remote_join_class = attribute
-                                remote_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                pass
-
-                            relationship_type = 0
-                            is_relationship_field = True
-
-                        ########################################################
-                        # One -> Many relationship
-                        ########################################################
-                        elif fk[0] == object.__tablename__:
-
-                            if hasattr(attributes[attribute].expression, "right"):
-                                if "%s." % (attribute) not in str(attributes[attribute].expression.right):
-                                    local_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                    remote_join_class = str(attributes[attribute].expression.right).split(".")[-2]
-                                    remote_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                    pass
-                                else:
-                                    local_join_field = str(attributes[attribute].expression.right).split(".")[-1]
-                                    remote_join_class = str(attributes[attribute].expression.left).split(".")[-2]
-                                    remote_join_field = str(attributes[attribute].expression.left).split(".")[-1]
-                                    pass
-                            else:
-                                return object
-                                pass
-                            relationship_type = 1
-                            is_relationship_field = True
-                except:
-                    is_relationship_field = False
-
-                if is_relationship_field:
-                    if relationship_type == 0:
-                        entity_class = globals()[attribute.capitalize()]
-                    elif relationship_type == 1:
-                        entity_class = globals()[remote_join_class.capitalize()]
-
-                    related_objects = []
-                    objects = RiakModelQuery(entity_class).get_objects(entity_class)
-                    for remote_object in objects:
-                        if getattr(object, local_join_field) == getattr(remote_object, remote_join_field):
-                            if (relationship_type == 0):
-                                setattr(object, attribute, remote_object)
-                            elif relationship_type == 1:
-                                related_objects += [remote_object]
-
-                    if relationship_type == 1:
-                        setattr(object, attribute, related_objects)
-
-            return object
-
-        def extract_sub_row(row, selectables):
-
-            """Adapt a row result to the expectation of sqlalchemy.
-            :param row: a list of python objects
-            :param selectables: a list entity class
-            :return: the response follows what is required by sqlalchemy (if len(model)==1, a single object is fine, in
-            the other case, a KeyTuple where each sub object is associated with it's entity name
-            """
-
-            if len(selectables) > 1:
-
-                labels = []
-
-                for selectable in selectables:
-                    labels += [self.find_table_name(selectable._model).capitalize()]
-
-                product = []
-                for label in labels:
-                    product = product + [getattr(row, label)]
-
-                # Updating Foreign Keys of objects that are in the row
-                for label in labels:
-                    current_object = getattr(row, label)
-                    metadata = current_object.metadata
-                    if metadata and hasattr(metadata, "_fk_memos"):
-                        for fk_name in metadata._fk_memos:
-                            fks = metadata._fk_memos[fk_name]
-                            for fk in fks:
-                                local_field_name = fk.column._label
-                                remote_table_name = fk._colspec.split(".")[-2].capitalize()
-                                remote_field_name = fk._colspec.split(".")[-1]
-
-                                try:
-                                    remote_object = getattr(row, remote_table_name)
-                                    remote_field_value = getattr(remote_object, remote_field_name)
-                                    setattr(current_object, local_field_name, remote_field_value)
-                                except:
-                                    pass
-
-                # Updating fields that are setted to None and that have default values
-                for label in labels:
-                    current_object = getattr(row, label)
-                    for field in current_object._sa_class_manager:
-                        instance_state = current_object._sa_instance_state
-                        field_value = getattr(current_object, field)
-                        if field_value is None:
-                            try:
-                                field_column = instance_state.mapper._props[field].columns[0]
-                                field_default_value = field_column.default.arg
-                                setattr(current_object, field, field_default_value)
-                            except:
-                                pass
-
-                return KeyedTuple(product, labels=labels)
-            else:
-                model_name = self.find_table_name(selectables[0]._model).capitalize()
-                return getattr(row, model_name)
-
-
-        labels = []
-        columns = set([])
-        rows = []
-
-        model_set = extract_models(self._models)
-
-        # get the fields of the join result
-        for selectable in model_set:
-            labels += [self.find_table_name(selectable._model).capitalize()]
-
-            if selectable._attributes == "*":
-                try:
-                    selected_attributes = selectable._model._sa_class_manager
-                except:
-                    selected_attributes = selectable._model.class_._sa_class_manager
-                    pass
-            else:
-                selected_attributes = [selectable._attributes]
-
-            for field in selected_attributes:
-
-                attribute = None
-                if hasattr(self._models, "class_"):
-                    attribute = selectable._model.class_._sa_class_manager[field].__str__()
-                elif hasattr(self._models, "_sa_class_manager"):
-                    attribute = selectable._model._sa_class_manager[field].__str__()
-
-                if attribute is not None:
-                    columns.add(attribute)
-
-        # construct the cartesian product
-        list_results = []
-        for selectable in model_set:
-            list_results += [map(load_relationship, self.get_objects(selectable._model))]
-            # list_results += [self.get_objects(model)]
-
-        # construct the cartesian product
-        cartesian_product = []
-        for element in itertools.product(*list_results):
-            cartesian_product += [element]
-
-        # filter elements of the cartesian product
-        for product in cartesian_product:
-            if len(product) > 0:
-                row = KeyedTuple(product, labels=labels)
-                all_criterions_satisfied = True
-
-                for criterion in self._criterions:
-                    if not self.evaluate_criterion(criterion, row):
-                        all_criterions_satisfied = False
-                if all_criterions_satisfied and not row in rows:
-                    rows += [extract_sub_row(row, model_set)]
-
-        final_rows = []
-        showable_selection = [x for x in self._models if (not x.is_hidden) or x._is_function]
-
-        if self.all_selectable_are_functions():
-            # functions = [x for x in self._models if (not x.is_hidden) or x._is_function]
-            # hiddens = [x for x in self._models if x.is_hidden]
-            # print(">1> %s" % (functions))
-            # print(">2> %s" % (showable_selection))
-            # print(">> %s" % (rows))
-            final_row = []
-            for selection in showable_selection:
-                value = selection._function._function(rows)
-                final_row += [value]
-                # print("inserting %s in %s" % (value, final_row))
-            return [final_row]
-        else:
-            for row in rows:
-                final_row = []
-                # print(showable_selection)
-                for selection in showable_selection:
-                    if selection._is_function:
-                        value = selection._function._function(rows)
-                        final_row += [value]
-                    else:
-                        current_table_name = self.find_table_name(selection._model)
-                        key = current_table_name.capitalize()
-                        value = None
-                        print("%s[%s]" % (row, key))
-                        if hasattr(row, key):
-                            value = getattr(row, key)
-                        else:
-                            value = row
-                        print(value)
-                        if value is not None:
-                            if selection._attributes != "*":
-                                final_row += [getattr(value, selection._attributes)]
-                            else:
-                                final_row += [value]
-                if len(showable_selection) == 1:
-                    final_rows += final_row
-                else:
-                    final_rows += [final_row]
-
-        return final_rows
-
+def and_(*exps):
+    return BooleanExpression("AND", *exps)
+
+def or_(*exps):
+    return BooleanExpression("OR", *exps)
+
+class BooleanExpression(object):
+    def __init__(self, operator, *exps):
+        self.operator = operator
+        self.exps = exps
+
+    def is_boolean_expression(self):
+        return True
 
     def evaluate_criterion(self, criterion, value):
 
@@ -505,7 +96,7 @@ class RiakModelQuery:
                         current_object = getattr(obj, current_key.capitalize())
                     elif hasattr(obj, uncapitalize(current_key)):
                         current_object = getattr(obj, uncapitalize(current_key))
-                    else:                        
+                    else:
                         current_object = getattr(obj, current_key)
 
                     return getattr_rec(current_object, next_key, otherwise)
@@ -518,8 +109,15 @@ class RiakModelQuery:
             def comparator (a, b):
                 if a is None or b is None:
                     return False
-                return "%s" %(a) == "%s" %(b)
+                return "%s" %(a) == "%s" %(b) or a == b
             op = "="
+
+        if "REGEXP" in criterion_str:
+            def comparator (a, b):
+                if a is None or b is None:
+                    return False
+                return "%s" %(a) == "%s" %(b) or a == b
+            op = "REGEXP"
 
         if "IS" in criterion_str:
             def comparator (a, b):
@@ -600,7 +198,7 @@ class RiakModelQuery:
 
         result = False
         for left_value in left_values:
-                
+
             if isinstance(left_value, datetime.datetime):
                 if left_value.tzinfo is None:
                     left_value = pytz.utc.localize(left_value)
@@ -630,7 +228,7 @@ class RiakModelQuery:
                     right_value = getattr(right_term.value, "%s" % (right_term._orig_key))
                 except AttributeError:
                     right_value = right_term.value
-                
+
                 if isinstance(left_value, datetime.datetime):
                     if left_value.tzinfo is None:
                         left_value = pytz.utc.localize(left_value)
@@ -643,6 +241,305 @@ class RiakModelQuery:
                     result = True
 
         return result
+
+    def evaluate(self, value):
+
+        if self.operator == "AND":
+            if len(self.exps) <= 0:
+                return False
+            for exp in self.exps:
+                if hasattr(exp, "evaluate") and not exp.evaluate(value):
+                    return False
+                else:
+                    if not self.evaluate_criterion(exp, value):
+                        return False
+            return True
+
+        if self.operator == "OR" or self.operator == "NORMAL":
+            for exp in self.exps:
+                if hasattr(exp, "evaluate") and exp.evaluate(value):
+                    return True
+                else:
+                    if self.evaluate_criterion(exp, value):
+                        return True
+            return False
+
+        return True
+
+class Function:
+    def __init__(self, name, field):
+        self._name = name
+        if name == "count":
+            self._function = self.count
+        elif name == "sum":
+            self._function = self.sum
+        else:
+            self._function = self.sum
+        self._field = field
+
+    def collect_field(self, rows, field):
+        if rows is None:
+            rows = []
+        if "." in field:
+            field = field.split(".")[1]
+        result = [ getattr(row, field) for row in rows]
+        return result
+
+    def count(self, rows):
+        collected_field_values = self.collect_field(rows, self._field)
+        return len(collected_field_values)
+
+    def sum(self, rows):
+        result = 0
+        collected_field_values = self.collect_field(rows, self._field)
+        try:
+            result = sum(collected_field_values)
+        except:
+            pass
+        return result
+
+import re
+
+def extract_models(l):
+    already_processed = set()
+    result = []
+    for selectable in [x for x in l if not x._is_function]:
+        if not selectable._model in already_processed:
+            already_processed.add(selectable._model)
+            result += [selectable]
+    return result
+
+class RiakModelQuery:
+
+    _funcs = []
+    _initial_models = []
+    _models = []
+    _criterions = []
+
+    def all_selectable_are_functions(self):
+        return all(x._is_function for x in [y for y in self._models if not y.is_hidden])
+
+    def __init__(self, *args, **kwargs):
+        self._models = []
+        self._criterions = []
+        self._funcs = []
+
+        base_model = None
+        if kwargs.has_key("base_model"):
+            base_model = kwargs.get("base_model")
+        for arg in args:
+            if "count" in str(arg) or "sum" in str(arg):
+                function_name = re.sub("\(.*\)", "", str(arg))
+                field_id = re.sub("\)", "", re.sub(".*\(", "", str(arg)))
+                self._models += [Selection(None, None, is_function=True, function=Function(function_name, field_id))]
+            elif self.find_table_name(arg) != "none":
+                arg_as_text = "%s" % (arg)
+                attribute_name = "*"
+                if not hasattr(arg, "_sa_class_manager"):
+                    if(len(arg_as_text.split(".")) > 1):
+                        attribute_name = arg_as_text.split(".")[-1]
+                    if hasattr(arg, "_sa_class_manager"):
+                        self._models += [Selection(arg, attribute_name)]
+                    elif hasattr(arg, "class_"):
+                        self._models += [Selection(arg.class_, attribute_name)]
+                else:
+                    self._models += [Selection(arg, "*")]
+                    pass
+            elif isinstance(arg, Selection):
+                self._models += [arg]
+            elif isinstance(arg, Function):
+                self._models += [Selection(None, None, True, arg)]
+                self._funcs += [arg]
+            elif isinstance(arg, BinaryExpression):
+                self._criterions += [BooleanExpression("NORMAL", arg)]
+            elif hasattr(arg, "is_boolean_expression"):
+                self._criterions += [arg]
+            else:
+                pass
+
+        if self.all_selectable_are_functions():
+            if base_model:
+                self._models += [Selection(base_model, "*", is_hidden=True)]
+
+    def find_table_name(self, model):
+
+        """This function return the name of the given model as a String. If the
+        model cannot be identified, it returns "none".
+        :param model: a model object candidate
+        :return: the table name or "none" if the object cannot be identified
+        """
+
+        if hasattr(model, "__tablename__"):
+            return model.__tablename__
+
+        if hasattr(model, "table"):
+            return model.table.name
+
+        if hasattr(model, "class_"):
+            return model.class_.__tablename__
+
+        if hasattr(model, "clauses"):
+            for clause in model.clauses:
+                return self.find_table_name(clause)
+
+        return "none"
+
+    def construct_rows(self):
+
+        """This function constructs the rows that corresponds to the current query.
+        :return: a list of row, according to sqlalchemy expectation
+        """
+
+        def extract_sub_row(row, selectables):
+
+            """Adapt a row result to the expectation of sqlalchemy.
+            :param row: a list of python objects
+            :param selectables: a list entity class
+            :return: the response follows what is required by sqlalchemy (if len(model)==1, a single object is fine, in
+            the other case, a KeyTuple where each sub object is associated with it's entity name
+            """
+
+            if len(selectables) > 1:
+
+                labels = []
+
+                for selectable in selectables:
+                    labels += [self.find_table_name(selectable._model).capitalize()]
+
+                product = []
+                for label in labels:
+                    product = product + [getattr(row, label)]
+
+                # Updating Foreign Keys of objects that are in the row
+                for label in labels:
+                    current_object = getattr(row, label)
+                    metadata = current_object.metadata
+                    if metadata and hasattr(metadata, "_fk_memos"):
+                        for fk_name in metadata._fk_memos:
+                            fks = metadata._fk_memos[fk_name]
+                            for fk in fks:
+                                local_field_name = fk.column._label
+                                remote_table_name = fk._colspec.split(".")[-2].capitalize()
+                                remote_field_name = fk._colspec.split(".")[-1]
+
+                                try:
+                                    remote_object = getattr(row, remote_table_name)
+                                    remote_field_value = getattr(remote_object, remote_field_name)
+                                    setattr(current_object, local_field_name, remote_field_value)
+                                except:
+                                    pass
+
+                # Updating fields that are setted to None and that have default values
+                for label in labels:
+                    current_object = getattr(row, label)
+                    for field in current_object._sa_class_manager:
+                        instance_state = current_object._sa_instance_state
+                        field_value = getattr(current_object, field)
+                        if field_value is None:
+                            try:
+                                field_column = instance_state.mapper._props[field].columns[0]
+                                field_default_value = field_column.default.arg
+                                setattr(current_object, field, field_default_value)
+                            except:
+                                pass
+
+                return KeyedTuple(product, labels=labels)
+            else:
+                model_name = self.find_table_name(selectables[0]._model).capitalize()
+                return getattr(row, model_name)
+
+
+        request_uuid = uuid.uuid1()
+
+        labels = []
+        columns = set([])
+        rows = []
+
+        model_set = extract_models(self._models)
+
+        # get the fields of the join result
+        for selectable in model_set:
+            labels += [self.find_table_name(selectable._model).capitalize()]
+
+            if selectable._attributes == "*":
+                try:
+                    selected_attributes = selectable._model._sa_class_manager
+                except:
+                    selected_attributes = selectable._model.class_._sa_class_manager
+                    pass
+            else:
+                selected_attributes = [selectable._attributes]
+
+            for field in selected_attributes:
+
+                attribute = None
+                if hasattr(self._models, "class_"):
+                    attribute = selectable._model.class_._sa_class_manager[field].__str__()
+                elif hasattr(self._models, "_sa_class_manager"):
+                    attribute = selectable._model._sa_class_manager[field].__str__()
+
+                if attribute is not None:
+                    columns.add(attribute)
+
+        # construct the cartesian product
+        list_results = []
+        for selectable in model_set:
+            tablename = find_table_name(selectable._model)
+            objects = get_objects(tablename, request_uuid=request_uuid)
+            list_results += [objects]
+
+        # construct the cartesian product
+        cartesian_product = []
+        for element in itertools.product(*list_results):
+            cartesian_product += [element]
+
+        # filter elements of the cartesian product
+        for product in cartesian_product:
+            if len(product) > 0:
+                row = KeyedTuple(product, labels=labels)
+                all_criterions_satisfied = True
+
+                for criterion in self._criterions:
+                    if not criterion.evaluate(row):
+                        all_criterions_satisfied = False
+                if all_criterions_satisfied and not row in rows:
+                    rows += [extract_sub_row(row, model_set)]
+
+        final_rows = []
+        showable_selection = [x for x in self._models if (not x.is_hidden) or x._is_function]
+
+        if self.all_selectable_are_functions():
+            final_row = []
+            for selection in showable_selection:
+                value = selection._function._function(rows)
+                final_row += [value]
+            return [final_row]
+        else:
+            for row in rows:
+                final_row = []
+                for selection in showable_selection:
+                    if selection._is_function:
+                        value = selection._function._function(rows)
+                        final_row += [value]
+                    else:
+                        current_table_name = self.find_table_name(selection._model)
+                        key = current_table_name.capitalize()
+                        value = None
+                        if not is_novabase(row) and hasattr(row, key):
+                            value = getattr(row, key)
+                        else:
+                            value = row
+                        if value is not None:
+                            if selection._attributes != "*":
+                                final_row += [getattr(value, selection._attributes)]
+                            else:
+                                final_row += [value]
+                if len(showable_selection) == 1:
+                    final_rows += final_row
+                else:
+                    final_rows += [final_row]
+
+        return final_rows
 
     def all(self):
 
@@ -694,7 +591,8 @@ class RiakModelQuery:
             for key in values:
                 data[key] = values[key]
 
-            object_desimplifier = ObjectDesimplifier()
+            request_uuid = uuid.uuid1()
+            object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
             
             try:
                 desimplified_object = object_desimplifier.desimplify(data)
@@ -724,6 +622,9 @@ class RiakModelQuery:
                     traceback.print_exc()
         args = self._models + _func + _criterions + self._initial_models
         return RiakModelQuery(*args)
+
+    def filter_dict(self, filters):
+        return self.filter_by(**filters)
 
     # criterions can be a function
     def filter(self, *criterions):

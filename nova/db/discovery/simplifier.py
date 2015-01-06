@@ -8,6 +8,13 @@ simplification of objects, before storing them into the discovery database.
 from nova.db.discovery.utils import merge_dicts
 from nova.db.discovery.utils import is_novabase
 
+import uuid
+
+SIMPLE_CACHES = {}
+COMPLEX_CACHES = {}
+TARGET_CACHES = {}
+
+
 def extract_adress(obj):
     """Extract an indentifier for the given object: if the object contains an
     id, it returns the id, otherwise it returns the memory address of the
@@ -26,10 +33,21 @@ class ObjectSimplifier(object):
     dictionnaries, novabase objects, ...) to a representation that can
     be stored in database."""
 
-    simple_cache = {}
-    complex_cache = {}
+    def __init__(self, request_uuid):
+        self.request_uuid = (request_uuid if request_uuid is not None
+            else uuid.uuid1()
+        )
+        if not SIMPLE_CACHES.has_key(self.request_uuid):
+            SIMPLE_CACHES[self.request_uuid] = {}
+        if not COMPLEX_CACHES.has_key(self.request_uuid):
+            COMPLEX_CACHES[self.request_uuid] = {}
+        if not TARGET_CACHES.has_key(self.request_uuid):
+            TARGET_CACHES[self.request_uuid] = {}
 
-    def __init__(self):
+        self.simple_cache = SIMPLE_CACHES[self.request_uuid]
+        self.complex_cache = COMPLEX_CACHES[self.request_uuid]
+        self.target_cache = TARGET_CACHES[self.request_uuid]
+
         self.reset()
 
     def get_cache_key(self, obj):
@@ -138,6 +156,7 @@ class ObjectSimplifier(object):
                     tmp = merge_dicts(tmp, {"project_id": obj.project_id})
                 if not key in self.simple_cache:
                     self.simple_cache[key] = tmp
+                    self.target_cache[key] = obj
 
                 simplified_object = tmp
 
@@ -147,11 +166,14 @@ class ObjectSimplifier(object):
             key = self.get_cache_key(obj)
             if not key in self.simple_cache:
                 self.simple_cache[key] = simplified_object
+                self.target_cache[key] = obj
 
             complex_object = self.extract_complex_object(obj)
 
             metadata_class_name = novabase_classname
             complex_object["metadata_novabase_classname"] = metadata_class_name
+            complex_object["pid"] = extract_adress(obj)
+            complex_object["rid"] = str(self.request_uuid)
 
             if not key in self.complex_cache:
                 self.complex_cache[key] = complex_object
@@ -186,9 +208,6 @@ class ObjectSimplifier(object):
             if hasattr(obj, "reload_default_values"):
                 obj.reload_default_values()
 
-            if hasattr(obj, "reload_foreign_keys"):
-                obj.reload_foreign_keys()
-
             result = self.extract_complex_object(obj)
 
             if is_novabase(obj):
@@ -196,10 +215,13 @@ class ObjectSimplifier(object):
                 if not key in self.complex_cache:
                     self.complex_cache[key] = result
                     self.simple_cache[key] = self.novabase_simplify(obj, True)
+                    self.target_cache[key] = obj
 
                     metadata_class_name = novabase_classname
                     metadata_dict = {
-                        "metadata_novabase_classname": metadata_class_name
+                        "metadata_novabase_classname": metadata_class_name,
+                        "pid": extract_adress(obj),
+                        "rid": str(self.request_uuid)
                     }
                     self.complex_cache[key] = merge_dicts(
                         self.complex_cache[key],
@@ -240,6 +262,7 @@ class ObjectSimplifier(object):
 
         self.simple_cache = {}
         self.complex_cache = {}
+        self.target_cache = {}
 
     def simplify(self, obj):
         """Simplify the given object."""

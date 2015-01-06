@@ -7,9 +7,12 @@ desimplification of objects, before sending them to the services of nova.
 
 import datetime
 import netaddr
+import uuid
 import pytz
 import nova.db.discovery.models
 import nova.db.discovery.lazy_reference
+
+CACHES = {}
 
 def convert_to_camelcase(word):
     """Convert the given word into camelcase naming convention."""
@@ -20,9 +23,15 @@ class ObjectDesimplifier(object):
     into an object containing values understandable by services composing
     Nova."""
 
-    def __init__(self):
+    def __init__(self, request_uuid=uuid.uuid1()):
         """Constructor"""
-        self.cache = {}
+
+        self.request_uuid = (request_uuid if request_uuid is not None
+            else uuid.uuid1()
+        )
+        if not CACHES.has_key(self.request_uuid):
+            CACHES[self.request_uuid] = {}
+        self.cache = CACHES[self.request_uuid]
 
     def is_dict_and_has_key(self, obj, key):
         """Check if the given object is a dict which contains the given key."""
@@ -34,12 +43,12 @@ class ObjectDesimplifier(object):
     def get_key(self, obj):
         """Returns a unique key for the given object."""
 
-        if self.is_dict_and_has_key(obj, "tablename"):
-            table_name = obj["tablename"]
+        if self.is_dict_and_has_key(obj, "nova_classname"):
+            table_name = obj["nova_classname"]
             key = obj["id"]
-            return "%s-%s" % (table_name, str(key))
+            return "%s_%s_%s" % (table_name, str(key), self.request_uuid)
         else:
-            return "%s-%s" % (hex(id(obj)), hex(id(obj)))
+            return "%s_%s_%s" % (hex(id(obj)), hex(id(obj)), self.request_uuid)
 
     def novabase_desimplify(self, obj):
         """Desimplify a novabase object."""
@@ -59,9 +68,9 @@ class ObjectDesimplifier(object):
             self.cache[key] = nova.db.discovery.lazy_reference.LazyReference(
                 tablename,
                 obj["id"],
-                desimplifier=self
+                desimplifier=self,
+                request_uuid=self.request_uuid
             )
-
         return self.cache[key]
 
 
