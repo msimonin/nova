@@ -33,12 +33,12 @@ from oslo.db.sqlalchemy import utils as sqlalchemyutils
 from oslo.utils import excutils
 from oslo.utils import timeutils
 import six
-from sqlalchemy import and_
+# from sqlalchemy import and_
 from sqlalchemy import Boolean
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy import Integer
 from sqlalchemy import MetaData
-from sqlalchemy import or_
+# from sqlalchemy import or_
 from sqlalchemy.orm import contains_eager
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import joinedload_all
@@ -70,6 +70,8 @@ except:
     pass
 
 # RIAK
+from nova.db.discovery.query import or_
+from nova.db.discovery.query import and_
 import itertools
 import traceback
 import uuid
@@ -1923,8 +1925,13 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
     # Make a copy of the filters dictionary to use going forward, as we'll
     # be modifying it and we shouldn't affect the caller's use of it.
     filters = filters.copy()
+    filters_ = {}
 
+    print("[FILT] filters => %s" % (filters))
+
+    query_prefix = session.query(models.Instance)
     if 'changes-since' in filters:
+        filters.pop('changes_since')
         changes_since = timeutils.normalize_time(filters['changes-since'])
         query_prefix = query_prefix.\
                             filter(models.Instance.updated_at >= changes_since)
@@ -1986,19 +1993,20 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
                               filters)
 
     # paginate query
-    if marker is not None:
-        try:
-            marker = _instance_get_by_uuid(context, marker, session=session)
-        except exception.InstanceNotFound:
-            raise exception.MarkerNotFound(marker)
+    # if marker is not None:
+    #     try:
+    #         marker = _instance_get_by_uuid(context, marker, session=session)
+    #     except exception.InstanceNotFound:
+    #         raise exception.MarkerNotFound(marker)
     # TODO: following cannot yet work with the RIAK DB implementation!
     # query_prefix = sqlalchemyutils.paginate_query(query_prefix,
     #                        models.Instance, limit,
     #                        [sort_key, 'created_at', 'id'],
     #                        marker=marker,
     #                        sort_dir=sort_dir)
-
-    query_prefix = RiakModelQuery(models.Instance)
+    # print("filters: %s" % (filters))
+    # query_prefix = RiakModelQuery(models.Instance).filter_dict(filters_)
+    # query_prefix = RiakModelQuery(models.Instance)
 
     return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
 

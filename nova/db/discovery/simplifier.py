@@ -10,9 +10,9 @@ from nova.db.discovery.utils import is_novabase
 
 import uuid
 
-simple_caches = {}
-complex_caches = {}
-target_caches = {}
+SIMPLE_CACHES = {}
+COMPLEX_CACHES = {}
+TARGET_CACHES = {}
 
 
 def extract_adress(obj):
@@ -34,18 +34,19 @@ class ObjectSimplifier(object):
     be stored in database."""
 
     def __init__(self, request_uuid):
-        self.request_uuid = request_uuid if request_uuid is not None else uuid.uuid1()
-        # self.request_uuid = "common-cache"
-        if not simple_caches.has_key(self.request_uuid):
-            simple_caches[self.request_uuid] = {}
-        if not complex_caches.has_key(self.request_uuid):
-            complex_caches[self.request_uuid] = {}
-        if not target_caches.has_key(self.request_uuid):
-            target_caches[self.request_uuid] = {}
+        self.request_uuid = (request_uuid if request_uuid is not None
+            else uuid.uuid1()
+        )
+        if not SIMPLE_CACHES.has_key(self.request_uuid):
+            SIMPLE_CACHES[self.request_uuid] = {}
+        if not COMPLEX_CACHES.has_key(self.request_uuid):
+            COMPLEX_CACHES[self.request_uuid] = {}
+        if not TARGET_CACHES.has_key(self.request_uuid):
+            TARGET_CACHES[self.request_uuid] = {}
 
-        self.simple_cache = simple_caches[self.request_uuid]
-        self.complex_cache = complex_caches[self.request_uuid]
-        self.target_cache = target_caches[self.request_uuid]
+        self.simple_cache = SIMPLE_CACHES[self.request_uuid]
+        self.complex_cache = COMPLEX_CACHES[self.request_uuid]
+        self.target_cache = TARGET_CACHES[self.request_uuid]
 
         self.reset()
 
@@ -128,8 +129,6 @@ class ObjectSimplifier(object):
 
     def novabase_simplify(self, obj, skip_complex_processing=False):
         """Simplify a NovaBase object."""
-
-        import uuid
 
         if not self.already_processed(obj):
 

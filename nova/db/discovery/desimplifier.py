@@ -12,7 +12,7 @@ import pytz
 import nova.db.discovery.models
 import nova.db.discovery.lazy_reference
 
-caches = {}
+CACHES = {}
 
 def convert_to_camelcase(word):
     """Convert the given word into camelcase naming convention."""
@@ -26,13 +26,12 @@ class ObjectDesimplifier(object):
     def __init__(self, request_uuid=uuid.uuid1()):
         """Constructor"""
 
-        # print("Desimplifier => %s" % (request_uuid))
-        self.request_uuid = request_uuid if request_uuid is not None else uuid.uuid1()
-        if not caches.has_key(self.request_uuid):
-            caches[self.request_uuid] = {}
-        self.cache = caches[self.request_uuid]
-        # if len(caches) > 1:
-        #     1/0
+        self.request_uuid = (request_uuid if request_uuid is not None
+            else uuid.uuid1()
+        )
+        if not CACHES.has_key(self.request_uuid):
+            CACHES[self.request_uuid] = {}
+        self.cache = CACHES[self.request_uuid]
 
     def is_dict_and_has_key(self, obj, key):
         """Check if the given object is a dict which contains the given key."""

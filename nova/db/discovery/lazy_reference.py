@@ -12,8 +12,7 @@ import uuid
 from nova.db.discovery.models import get_model_class_from_name
 from nova.db.discovery.models import get_model_classname_from_tablename
 
-dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
-# caches = {}
+RIAK_CLIENT = riak.RiakClient(pb_port=8087, protocol='pbc')
 
 def now_in_ms():
     return int(round(time.time() * 1000))
@@ -30,13 +29,9 @@ class LazyReference:
     def __init__(self, base, id, request_uuid, desimplifier):
         """Constructor"""
 
-        # print("LazyReference => %s" % (request_uuid))
-
         import nova.db.discovery.desimplifier as desimplifier_module
 
-        # print(desimplifier_module.caches)
-        # global caches
-        caches = desimplifier_module.caches
+        caches = desimplifier_module.CACHES
 
         self.base = base
         self.id = id
@@ -100,7 +95,11 @@ class LazyReference:
             simplified_value = self.desimplifier.desimplify(obj[key])
             try:
                 if simplified_value is not None:
-                    setattr(current_model, key, self.desimplifier.desimplify(obj[key]))
+                    setattr(
+                        current_model,
+                        key,
+                        self.desimplifier.desimplify(obj[key])
+                    )
                 else:
                     setattr(current_model, key, obj[key])
             except Exception as e:
@@ -128,7 +127,7 @@ class LazyReference:
 
         key = self.get_key()
 
-        key_index_bucket = dbClient.bucket(self.base)
+        key_index_bucket = RIAK_CLIENT.bucket(self.base)
         fetched = key_index_bucket.get(str(self.id))
         obj = fetched.data
 
@@ -163,7 +162,8 @@ class LazyReference:
         referenced object: the object is thus loaded from database, and the
         requested attribute/method is then setted with the given value."""
 
-        if name in ["base", "id", "cache", "desimplifier", "request_uuid", "uuid", "version"]:
+        if name in ["base", "id", "cache", "desimplifier", "request_uuid",
+        "uuid", "version"]:
             self.__dict__[name] = value
         else:
             setattr(self.get_complex_ref(), name, value)
