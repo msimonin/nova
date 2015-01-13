@@ -86,7 +86,7 @@ class LazyReference:
 
         # Check if obj is simplified or not
         if "simplify_strategy" in obj:
-            object_bucket = db_client.bucket(obj["tablename"])
+            object_bucket = RIAK_CLIENT.bucket(obj["tablename"])
             riak_value = object_bucket.get(str(obj["id"]))
             obj = riak_value.data
 

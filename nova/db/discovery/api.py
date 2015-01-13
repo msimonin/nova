@@ -4937,12 +4937,22 @@ def instance_metadata_update(context, instance_uuid, metadata, delete):
 
 def _instance_system_metadata_get_multi(context, instance_uuids,
                                         session=None, use_slave=False):
-    if not instance_uuids:
-        return []
-    return model_query(context, models.InstanceSystemMetadata,
-                       session=session, use_slave=use_slave).\
-                    filter(
-            models.InstanceSystemMetadata.instance_uuid.in_(instance_uuids))
+    print("[DEBUG] from _instance_system_metadata_get_multi")
+    print("[DEBUG] instance_uuids => %s" % (instance_uuids))
+    result = []
+    for instance_uuid in instance_uuids:
+        query = model_query(context, models.InstanceSystemMetadata,
+            session=session, use_slave=use_slave).\
+            filter(models.InstanceSystemMetadata.instance_uuid==instance_uuid)
+        result += query.all()
+
+    return result
+    # if not instance_uuids:
+    #     return []
+    # return model_query(context, models.InstanceSystemMetadata,
+    #                    session=session, use_slave=use_slave).\
+    #                 filter(
+    #         models.InstanceSystemMetadata.instance_uuid.in_(instance_uuids))
 
 
 def _instance_system_metadata_get_query(context, instance_uuid, session=None):

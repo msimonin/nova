@@ -35,7 +35,6 @@ try:
     from desimplifier import find_table_name
 except:
     pass
-import collections
 import uuid
 
 dbClient = riak.RiakClient(pb_port=8087, protocol='pbc')
@@ -154,7 +153,7 @@ class BooleanExpression(object):
             def comparator (a, b):
                 if a is None or b is None:
                     return False
-                return a == b
+                return a == b or a is b
             op = "IN"
 
         split = criterion_str.split(op)
@@ -217,6 +216,7 @@ class BooleanExpression(object):
         if op == "IN":
             result = False
             right_terms = set(criterion.right.element)
+            # print("before %s" % (right_terms))
 
             if left_value is None and hasattr(value, "__iter__"):
                 left_key = left.split(".")[-1]
@@ -236,10 +236,9 @@ class BooleanExpression(object):
                 if isinstance(right_value, datetime.datetime):
                     if right_value.tzinfo is None:
                         right_value = pytz.utc.localize(right_value)
-
+                # print("comparing %s with %s" % (left_value, right_value))
                 if comparator(left_value, right_value):
                     result = True
-
         return result
 
     def evaluate(self, value):
@@ -648,7 +647,10 @@ class RiakModelQuery:
 
             for item in tuples:
                 is_class = inspect.isclass(item)
-                is_expression = isinstance(item, BinaryExpression)
+                is_expression = (
+                    "BinaryExpression" in "%s"%(item) or
+                    "BooleanExpression" in "%s"%(item)
+                )
                 if is_class:
                     _models = _models + [Selection(item, "*")]
                 elif is_expression:

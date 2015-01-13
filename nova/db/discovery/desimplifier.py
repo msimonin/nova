@@ -47,6 +47,10 @@ class ObjectDesimplifier(object):
             table_name = obj["nova_classname"]
             key = obj["id"]
             return "%s_%s_%s" % (table_name, str(key), self.request_uuid)
+        elif self.is_dict_and_has_key(obj, "novabase_classname"):
+            table_name = obj["novabase_classname"]
+            key = obj["id"]
+            return "%s_%s_%s" % (table_name, str(key), self.request_uuid)
         else:
             return "%s_%s_%s" % (hex(id(obj)), hex(id(obj)), self.request_uuid)
 
