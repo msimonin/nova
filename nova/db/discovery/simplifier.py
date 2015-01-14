@@ -33,7 +33,7 @@ class ObjectSimplifier(object):
     dictionnaries, novabase objects, ...) to a representation that can
     be stored in database."""
 
-    def __init__(self, request_uuid):
+    def __init__(self, request_uuid=uuid.uuid1()):
         self.request_uuid = (request_uuid if request_uuid is not None
             else uuid.uuid1()
         )

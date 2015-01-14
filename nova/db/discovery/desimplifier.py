@@ -107,13 +107,15 @@ class ObjectDesimplifier(object):
             if obj['simplify_strategy'] == 'novabase':
                 result = self.novabase_desimplify(obj)
         elif is_list:
-            list_result = []
+            result = []
             for item in obj:
-                list_result += [self.desimplify(item)]
-            result = list_result
+                result += [self.desimplify(item)]
         elif is_dict and obj.has_key("novabase_classname"):
             result = self.novabase_desimplify(obj)
         elif is_dict and obj.has_key("metadata_novabase_classname"):
             result = self.novabase_desimplify(obj)
-
+        elif is_dict:
+            result = {}
+            for item in obj:
+                result[item] = self.desimplify(obj[item])
         return result

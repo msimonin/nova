@@ -91,22 +91,22 @@ class ObjectComparator:
 
         def __call__(self, *args, **kwargs):
 
-            result_callable_a = self.callable_a(*args, **kwargs)
+            # result_callable_a = self.callable_a(*args, **kwargs)
             # try:
             result_callable_b = self.callable_b(*args, **kwargs)
             # except:
             #     result_callable_b = "ERROR"
             #     pass
 
-            pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
+            # pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
             pretty_print_callable_b = "%s.%s => [%s]" % (self.label_b, self.call_name, str(result_callable_b))
             
-            print(pretty_print_callable_a)
+            # print(pretty_print_callable_a)
             print(pretty_print_callable_b)
 
             fo = open("/opt/logs/db_api.log", "a")
 
-            fo.write(pretty_print_callable_a+"\n")
+            # fo.write(pretty_print_callable_a+"\n")
             fo.write(pretty_print_callable_b+"\n")
             fo.write("\n")
 

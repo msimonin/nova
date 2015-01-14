@@ -570,43 +570,67 @@ def compute_node_get_all(context, no_date_fields):
     #                manually here allows to gain 3x speed-up and to have 5x
     #                less network load / memory usage compared to the sqla ORM.
 
-    engine = get_engine()
+    # engine = get_engine()
 
-    # Retrieve ComputeNode, Service
-    compute_node = models.ComputeNode.__table__
-    service = models.Service.__table__
+    # # Retrieve ComputeNode, Service
+    # compute_node = models.ComputeNode.__table__
+    # service = models.Service.__table__
 
-    with engine.begin() as conn:
-        redundant_columns = set(['deleted_at', 'created_at', 'updated_at',
-                                 'deleted']) if no_date_fields else set([])
+    # with engine.begin() as conn:
+    #     redundant_columns = set(['deleted_at', 'created_at', 'updated_at',
+    #                              'deleted']) if no_date_fields else set([])
 
-        def filter_columns(table):
-            return [c for c in table.c if c.name not in redundant_columns]
+    #     def filter_columns(table):
+    #         return [c for c in table.c if c.name not in redundant_columns]
 
-        compute_node_query = sql.select(filter_columns(compute_node)).\
-                                where(compute_node.c.deleted == 0).\
-                                order_by(compute_node.c.service_id)
-        compute_node_rows = conn.execute(compute_node_query).fetchall()
+    #     compute_node_query = sql.select(filter_columns(compute_node)).\
+    #                             where(compute_node.c.deleted == 0).\
+    #                             order_by(compute_node.c.service_id)
+    #     compute_node_rows = conn.execute(compute_node_query).fetchall()
 
-        service_query = sql.select(filter_columns(service)).\
-                            where((service.c.deleted == 0) &
-                                  (service.c.binary == 'nova-compute')).\
-                            order_by(service.c.id)
-        service_rows = conn.execute(service_query).fetchall()
+    #     service_query = sql.select(filter_columns(service)).\
+    #                         where((service.c.deleted == 0) &
+    #                               (service.c.binary == 'nova-compute')).\
+    #                         order_by(service.c.id)
+    #     service_rows = conn.execute(service_query).fetchall()
 
-    # Join ComputeNode & Service manually.
-    services = {}
-    for proxy in service_rows:
-        services[proxy['id']] = dict(proxy.items())
+    # # Join ComputeNode & Service manually.
+    # services = {}
+    # for proxy in service_rows:
+    #     services[proxy['id']] = dict(proxy.items())
 
-    compute_nodes = []
-    for proxy in compute_node_rows:
-        node = dict(proxy.items())
-        node['service'] = services.get(proxy['service_id'])
+    # compute_nodes = []
+    # for proxy in compute_node_rows:
+    #     node = dict(proxy.items())
+    #     node['service'] = services.get(proxy['service_id'])
 
-        compute_nodes.append(node)
+    #     compute_nodes.append(node)
+    from nova.db.discovery.simplifier import ObjectSimplifier
+    from nova.db.discovery.desimplifier import ObjectDesimplifier
 
-    return compute_nodes
+    query = RiakModelQuery(models.ComputeNode)
+    compute_nodes = query.all()
+
+    def novabase_to_dict(ref):
+        request_uuid = uuid.uuid1()
+        object_simplifier = ObjectSimplifier(request_uuid=request_uuid)
+        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
+
+        simplified_object = object_simplifier.simplify(ref)
+        simplified_object.pop("metadata_novabase_classname")
+
+        desimplified_object = object_desimplifier.desimplify(simplified_object)
+        
+        return desimplified_object
+
+    result = []
+    for each in compute_nodes:
+        compute_node = novabase_to_dict(each)
+        compute_node["service"] = novabase_to_dict(compute_node["service"])
+        compute_node["service"].pop("compute_node")
+        result += [compute_node]
+
+    return result
 
 
 @require_admin_context

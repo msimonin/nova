@@ -314,6 +314,7 @@ class NovaBase(models.SoftDeleteMixin,
 
             if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
                 current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
+            current_object["updated_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
 
             print(">>>>>>>>>>>>>> storing in %s: {%s}" %(table_name, current_object["id"]))
             print(current_object)
