@@ -172,24 +172,26 @@ class BooleanExpression(object):
         if right.startswith(":"):
             right_value = criterion._orig[1].effective_value
         else:
-            if isinstance(criterion._orig[1], bool):
-                right_value = criterion._orig[1]
-            else:
-                right_type_name = "none"
-                try:
-                    right_type_name = str(criterion._orig[1].type)
-                except:
-                    pass
-
-                if right_type_name == "BOOLEAN":
-                    right_value = right
-                    if right_value == "1":
-                        right_value = True
-                    else:
-                        right_value = False
+            if hasattr(criterion, "_orig"):
+                if isinstance(criterion._orig[1], bool):
+                    right_value = criterion._orig[1]
                 else:
-                    right_value = getattr_rec(value, right.capitalize())
+                    right_type_name = "none"
+                    try:
+                        right_type_name = str(criterion._orig[1].type)
+                    except:
+                        pass
 
+                    if right_type_name == "BOOLEAN":
+                        right_value = right
+                        if right_value == "1":
+                            right_value = True
+                        else:
+                            right_value = False
+                    else:
+                        right_value = getattr_rec(value, right.capitalize())
+            elif hasattr(criterion, "is_boolean_expression") and criterion.is_boolean_expression():
+                right_value = criterion.evaluate(value)
         # try:
         #     print(">>> (%s)[%s] = %s <-> %s" % (value.keys(), left, left_values, right))
         # except:
