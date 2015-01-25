@@ -113,6 +113,16 @@ def get_tablename_from_name(name):
 def MediumText():
     return Text().with_variant(MEDIUMTEXT(), 'mysql')
 
+def same_version(a, b, model):
+    if a is None:
+        return False
+    for attr in model._sa_class_manager:
+        if "RelationshipProperty" in str(type(model._sa_class_manager[attr].property)):
+            continue
+        if (a.has_key(attr) ^ b.has_key(attr)) or (a.has_key(attr) and a[attr] != b[attr]):
+            return False
+    return True
+
 def merge_dict(a, b):
     result = {}
     if a is not None:
@@ -299,21 +309,26 @@ class NovaBase(models.SoftDeleteMixin,
             myBucket = dbClient.bucket(table_name)
 
             """Delete existing object"""
-            print("simplified_object [%s][%s] --> %s" % (table_name, current_object["id"], current_object))
+            # print("simplified_object [%s][%s] --> %s" % (table_name, current_object["id"], current_object))
 
             current_object["nova_classname"] = table_name
 
-            existing_object = {}
             if not "id" in current_object or current_object["id"] is None:
                 current_object["id"] = self.next_key(table_name)
             else:
+                model_class = get_model_class_from_name(classname)
                 existing_object = myBucket.get(str(current_object["id"])).data
-                current_object = merge_dict(existing_object, current_object)
+                if not same_version(existing_object, current_object, model_class):
+                    current_object = merge_dict(existing_object, current_object)
+                else:
+                    continue
 
             object_simplifier_datetime = ObjectSimplifier(request_uuid)
 
             if (current_object.has_key("created_at") and current_object["created_at"] is None) or not current_object.has_key("created_at"):
                 current_object["created_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
+            # else:
+            #     continue
             current_object["updated_at"] = object_simplifier_datetime.simplify(timeutils.utcnow())
 
             print(">>>>>>>>>>>>>> storing in %s: {%s}" %(table_name, current_object["id"]))
