@@ -177,6 +177,22 @@ class NovaBase(models.SoftDeleteMixin,
             if result is not None:
                 return result.id
 
+        """"hack for 'InstanceActionEvent' class"""
+        if table_name == "instance_actions_events":
+
+            from query import RiakModelQuery
+
+            event = self.event
+            action_id = self.action_id
+
+
+            query = RiakModelQuery(InstanceActionEvent).filter(InstanceActionEvent.event==event).filter(InstanceActionEvent.action_id==action_id)
+            result = query.first()
+
+            if result is not None:
+                if result.result == "Success" or result.result is None:
+                    return -1
+
         """Check if the current table contains keys."""
         myBucket = dbClient.bucket("key_index")
         fetched = myBucket.get(table_name)
@@ -336,6 +352,10 @@ class NovaBase(models.SoftDeleteMixin,
                     current_object = merge_dict(existing_object, current_object)
                 else:
                     continue
+
+            if current_object["id"] == -1:
+                print(">>>>>>>>>>>>>> I skip %s: {%s}" %(table_name, current_object["id"]))
+                continue
 
             object_simplifier_datetime = ObjectSimplifier(request_uuid)
 
