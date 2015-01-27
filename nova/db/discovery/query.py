@@ -85,7 +85,7 @@ class BooleanExpression(object):
             """
             try:
                 if not "." in attr:
-                    return getattr(obj, attr)
+                    return getattr(obj, attr.replace("\"", ""))
                 else:
                     current_key = attr[:attr.index(".")]
                     next_key = attr[attr.index(".") + 1:]

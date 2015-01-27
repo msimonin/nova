@@ -163,6 +163,20 @@ class NovaBase(models.SoftDeleteMixin,
 
     def next_key(self, table_name):
 
+        """"hack for 'Service' class"""
+        if table_name == "services":
+
+            from query import RiakModelQuery
+
+            binary = self.binary
+            host = self.host
+
+            query = RiakModelQuery(Service).filter(Service.binary==binary).filter(Service.host==host)
+            result = query.first()
+
+            if result is not None:
+                return result.id
+
         """Check if the current table contains keys."""
         myBucket = dbClient.bucket("key_index")
         fetched = myBucket.get(table_name)
