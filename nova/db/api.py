@@ -54,7 +54,7 @@ CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
 
-class ObjectComparator:
+class ApiProxy:
 
     """Class that enables a "visual" comparison between two objects (<a> and <b>): when a developer wants to test if some
     methods of <a> differs from some methodes of <b>, this class can be used. """
@@ -99,7 +99,7 @@ class ObjectComparator:
             #     pass
 
             # pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
-            pretty_print_callable_b = "%s.%s => [%s]" % (self.label_b, self.call_name, str(result_callable_b))
+            pretty_print_callable_b = "%s.%s(args=%s, kwargs=%s) => [%s]" % (self.label_b, self.call_name, str(args), str(kwargs), str(result_callable_b))
             
             # print(pretty_print_callable_a)
             print(pretty_print_callable_b)
@@ -124,7 +124,7 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = ObjectComparator(mysql_api, discovery_api, "[ MySQL_impl    ]", "[ Discovery_impl]", False)
+IMPL = ApiProxy(mysql_api, discovery_api, "[ MySQL_impl    ]", "[ Discovery_impl]", False)
 
 class DualImpl:
     def __init__(self):
