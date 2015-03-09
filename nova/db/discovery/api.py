@@ -482,7 +482,6 @@ def service_get_by_compute_host(context, host, use_slave=False):
                          use_slave=use_slave).\
                 options(joinedload('compute_node')).\
                 filter_by(host=host).\
-                filter_by(topic=CONF.compute_topic).\
                 first()
 
     if not result:
