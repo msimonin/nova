@@ -535,6 +535,10 @@ def service_create(context, values):
             if not services_created.has_key(service_key):
                 services_created[service_key] = "created"
                 service_ref.save()
+            else:
+                raise exception.ServiceBinaryExists(host=values.get('host'),
+                    binary=values.get('binary'))
+
         else:
             raise exception.ServiceTopicExists(host=values.get('host'),
                 topic=values.get('topic'))
