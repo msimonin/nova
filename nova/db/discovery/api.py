@@ -511,13 +511,13 @@ def service_create(context, values):
                     filter_by(binary=values.get('binary')).\
                     all()
     print(" * service_binary (%s) => %s" % (values, service_binary))
-    if service_binary is None:
+    if len(service_binary) == 0:
         service_topic = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
                     filter_by(topic=values.get('topic')).\
                     all()
         print(" * service_topic (%s) => %s" % (values, service_topic))
-        if service_topic is None:
+        if len(service_topic) == 0:
             service_ref = models.Service()
             service_ref.update(values, do_save=False)
 
