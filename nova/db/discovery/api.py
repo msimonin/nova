@@ -505,22 +505,24 @@ def service_get_by_args(context, host, binary):
 
 @require_admin_context
 def service_create(context, values):
-    service_ref = models.Service()
-    service_ref.update(values, do_save=False)
-
-    if not CONF.enable_new_services:
-        service_ref.disabled = True
 
     service_binary = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
                     filter_by(binary=values.get('binary')).\
                     all()
+    print(" * service_binary (%s) => %s" % (values, service_binary))
     if service_binary is None:
         service_topic = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
                     filter_by(topic=values.get('topic')).\
                     all()
+        print(" * service_topic (%s) => %s" % (values, service_topic))
         if service_topic is None:
+            service_ref = models.Service()
+            service_ref.update(values, do_save=False)
+
+            if not CONF.enable_new_services:
+                service_ref.disabled = True
             service_ref.save()
         else:
             raise exception.ServiceTopicExists(host=values.get('host'),
