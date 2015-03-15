@@ -507,31 +507,36 @@ service_creation_lock = threading.Lock()
 @require_admin_context
 def service_create(context, values):
 
-    with service_creation_lock:
-        service_binary = model_query(context, models.Service).\
-                        filter_by(host=values.get('host')).\
-                        filter_by(binary=values.get('binary')).\
-                        all()
-        print(" * service_binary (%s) => %s" % (values, service_binary))
-        if len(service_binary) == 0:
-            service_topic = model_query(context, models.Service).\
-                        filter_by(host=values.get('host')).\
-                        filter_by(topic=values.get('topic')).\
-                        all()
-            print(" * service_topic (%s) => %s" % (values, service_topic))
-            if len(service_topic) == 0:
-                service_ref = models.Service()
-                service_ref.update(values, do_save=False)
-                if not CONF.enable_new_services:
-                    service_ref.disabled = True
-                service_ref.save()
-            else:
-                raise exception.ServiceTopicExists(host=values.get('host'),
-                    topic=values.get('topic'))
+    service_creation_lock.acquire()
+
+    service_binary = model_query(context, models.Service).\
+                    filter_by(host=values.get('host')).\
+                    filter_by(binary=values.get('binary')).\
+                    all()
+    print(" * service_binary (%s) => %s" % (values, service_binary))
+    if len(service_binary) == 0:
+        service_topic = model_query(context, models.Service).\
+                    filter_by(host=values.get('host')).\
+                    filter_by(topic=values.get('topic')).\
+                    all()
+        print(" * service_topic (%s) => %s" % (values, service_topic))
+        if len(service_topic) == 0:
+            service_ref = models.Service()
+            service_ref.update(values, do_save=False)
+            if not CONF.enable_new_services:
+                service_ref.disabled = True
+            service_ref.save()
         else:
-            raise exception.ServiceBinaryExists(host=values.get('host'),
-                binary=values.get('binary'))
-        return service_ref
+            service_creation_lock.release()
+            raise exception.ServiceTopicExists(host=values.get('host'),
+                topic=values.get('topic'))
+    else:
+        service_creation_lock.release()
+        raise exception.ServiceBinaryExists(host=values.get('host'),
+            binary=values.get('binary'))
+
+    service_creation_lock.release()
+    return service_ref
 
 
 @require_admin_context
