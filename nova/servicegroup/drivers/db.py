@@ -22,7 +22,7 @@ from nova import context
 from nova.i18n import _, _LE
 from nova.openstack.common import log as logging
 from nova.servicegroup import api
-from threading import Lock
+import threading
 
 CONF = cfg.CONF
 CONF.import_opt('service_down_time', 'nova.service')
