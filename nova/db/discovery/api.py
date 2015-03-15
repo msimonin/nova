@@ -547,7 +547,9 @@ def service_update(context, service_id, values):
     with session.begin():
         service_ref = _service_get(context, service_id,
                                    with_compute_node=False, session=session)
-        service_ref.update(values)
+        if values.keys() == ["report_count"]:
+            if not values["report_count"] == service_ref.report_count:
+                service_ref.update(values)
 
     return service_ref
 
