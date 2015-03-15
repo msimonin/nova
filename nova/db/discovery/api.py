@@ -502,60 +502,36 @@ def service_get_by_args(context, host, binary):
 
     return result
 
-services_created = {}
+service_creation_lock = threading.Lock()
 
 @require_admin_context
 def service_create(context, values):
 
-    service_key = "%s_%s_%s" % (values.get('host'), values.get('binary'), values.get('topic'))
-    if services_created.has_key(service_key):
-        raise exception.ServiceBinaryExists(host=values.get('host'),
-            binary=values.get('binary'))
-
-
-    service_binary = model_query(context, models.Service).\
-                    filter_by(host=values.get('host')).\
-                    filter_by(binary=values.get('binary')).\
-                    all()
-    print(" * service_binary (%s) => %s" % (values, service_binary))
-    if len(service_binary) == 0:
-        service_topic = model_query(context, models.Service).\
-                    filter_by(host=values.get('host')).\
-                    filter_by(topic=values.get('topic')).\
-                    all()
-        print(" * service_topic (%s) => %s" % (values, service_topic))
-        if len(service_topic) == 0:
-            service_ref = models.Service()
-            service_ref.update(values, do_save=False)
-
-            if not CONF.enable_new_services:
-                service_ref.disabled = True
-
-
-            if not services_created.has_key(service_key):
-                services_created[service_key] = "created"
+    with service_creation_lock:
+        service_binary = model_query(context, models.Service).\
+                        filter_by(host=values.get('host')).\
+                        filter_by(binary=values.get('binary')).\
+                        all()
+        print(" * service_binary (%s) => %s" % (values, service_binary))
+        if len(service_binary) == 0:
+            service_topic = model_query(context, models.Service).\
+                        filter_by(host=values.get('host')).\
+                        filter_by(topic=values.get('topic')).\
+                        all()
+            print(" * service_topic (%s) => %s" % (values, service_topic))
+            if len(service_topic) == 0:
+                service_ref = models.Service()
+                service_ref.update(values, do_save=False)
+                if not CONF.enable_new_services:
+                    service_ref.disabled = True
                 service_ref.save()
             else:
-                raise exception.ServiceBinaryExists(host=values.get('host'),
-                    binary=values.get('binary'))
-
+                raise exception.ServiceTopicExists(host=values.get('host'),
+                    topic=values.get('topic'))
         else:
-            raise exception.ServiceTopicExists(host=values.get('host'),
-                topic=values.get('topic'))
-    else:
-        raise exception.ServiceBinaryExists(host=values.get('host'),
-            binary=values.get('binary'))
-    # if not CONF.enable_new_services:
-    #     service_ref.disabled = True
-    # try:
-    #     service_ref.save()
-    # except db_exc.DBDuplicateEntry as e:
-    #     if 'binary' in e.columns:
-    #         raise exception.ServiceBinaryExists(host=values.get('host'),
-    #                     binary=values.get('binary'))
-    #     raise exception.ServiceTopicExists(host=values.get('host'),
-    #                     topic=values.get('topic'))
-    return service_ref
+            raise exception.ServiceBinaryExists(host=values.get('host'),
+                binary=values.get('binary'))
+        return service_ref
 
 
 @require_admin_context
