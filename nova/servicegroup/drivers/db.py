@@ -22,15 +22,11 @@ from nova import context
 from nova.i18n import _, _LE
 from nova.openstack.common import log as logging
 from nova.servicegroup import api
-import threading
 
 CONF = cfg.CONF
 CONF.import_opt('service_down_time', 'nova.service')
 
 LOG = logging.getLogger(__name__)
-
-join_lock = threading.Lock()
-registered_members = {}
 
 class DbDriver(api.ServiceGroupDriver):
 
@@ -42,23 +38,18 @@ class DbDriver(api.ServiceGroupDriver):
     def join(self, member_id, group_id, service=None):
         """Join the given service with its group."""
 
-        with join_lock:
-            service_key = str(service)
-            if registered_members.has_key(service_key):
-                print("service is already registered with %s, i stop the join.")
-                return
-            registered_members[service_key] = service
-            msg = _('DB_Driver: join new ServiceGroup member %(member_id)s to '
-                        'the %(group_id)s group, service = %(service)s')
-            LOG.debug(msg, {'member_id': member_id, 'group_id': group_id,
-                            'service': service})
-            if service is None:
-                raise RuntimeError(_('service is a mandatory argument for DB based'
-                                     ' ServiceGroup driver'))
-            report_interval = service.report_interval
-            if report_interval:
-                service.tg.add_timer(report_interval, self._report_state,
-                                     api.INITIAL_REPORTING_DELAY, service)
+
+        msg = _('DB_Driver: join new ServiceGroup member %(member_id)s to '
+                    'the %(group_id)s group, service = %(service)s')
+        LOG.debug(msg, {'member_id': member_id, 'group_id': group_id,
+                        'service': service})
+        if service is None:
+            raise RuntimeError(_('service is a mandatory argument for DB based'
+                                 ' ServiceGroup driver'))
+        report_interval = service.report_interval
+        if report_interval:
+            service.tg.add_timer(report_interval, self._report_state,
+                                 api.INITIAL_REPORTING_DELAY, service)
 
     def is_up(self, service_ref):
         """Moved from nova.utils
