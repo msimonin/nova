@@ -29,6 +29,8 @@ CONF.import_opt('service_down_time', 'nova.service')
 
 LOG = logging.getLogger(__name__)
 
+join_lock = threading.Lock()
+registered_members = {}
 
 class DbDriver(api.ServiceGroupDriver):
 
@@ -36,18 +38,16 @@ class DbDriver(api.ServiceGroupDriver):
         self.db_allowed = kwargs.get('db_allowed', True)
         self.conductor_api = conductor.API(use_local=self.db_allowed)
         self.service_down_time = CONF.service_down_time
-        self.join_lock = threading.Lock()
-        self.registered_members = {}
 
     def join(self, member_id, group_id, service=None):
         """Join the given service with its group."""
 
-        with self.join_lock:
+        with join_lock:
             service_key = str(service)
-            if self.registered_members.has_key(service_key):
+            if registered_members.has_key(service_key):
                 print("service is already registered with %s, i stop the join.")
                 return
-            self.registered_members[service_key] = service
+            registered_members[service_key] = service
             msg = _('DB_Driver: join new ServiceGroup member %(member_id)s to '
                         'the %(group_id)s group, service = %(service)s')
             LOG.debug(msg, {'member_id': member_id, 'group_id': group_id,
