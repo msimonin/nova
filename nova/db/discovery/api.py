@@ -508,6 +508,7 @@ service_creation_lock = threading.Lock()
 def service_create(context, values):
 
     service_creation_lock.acquire()
+    print("acquired lock from %s" % (str(service_creation_lock)))
 
     service_binary = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
@@ -526,16 +527,18 @@ def service_create(context, values):
             if not CONF.enable_new_services:
                 service_ref.disabled = True
             service_ref.save()
+            print("released lock from %s" % (str(service_creation_lock)))
+            service_creation_lock.release()
         else:
+            print("released lock from %s" % (str(service_creation_lock)))
             service_creation_lock.release()
             raise exception.ServiceTopicExists(host=values.get('host'),
                 topic=values.get('topic'))
     else:
+        print("released lock from %s" % (str(service_creation_lock)))
         service_creation_lock.release()
         raise exception.ServiceBinaryExists(host=values.get('host'),
             binary=values.get('binary'))
-
-    service_creation_lock.release()
     return service_ref
 
 
