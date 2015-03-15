@@ -42,7 +42,7 @@ class DbDriver(api.ServiceGroupDriver):
     def join(self, member_id, group_id, service=None):
         """Join the given service with its group."""
 
-        with join_lock:
+        with self.join_lock:
             service_key = str(service)
             if registered_members.has_key(service):
                 print("service is already registered with %s, i stop the join.")
