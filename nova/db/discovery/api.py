@@ -17,6 +17,8 @@
 
 """Implementation of Discovery backend."""
 
+from __future__ import with_statement
+
 import collections
 import copy
 import datetime
@@ -504,11 +506,22 @@ def service_get_by_args(context, host, binary):
 
 service_creation_lock = threading.Lock()
 
+from threading import Lock
+def synchronized():
+    the_lock = Lock()
+    def fwrap(function):
+        def newFunction(*args, **kw):
+            with the_lock:
+                return function(*args, **kw)
+        return newFunction
+    return fwrap
+
 @require_admin_context
+@synchronized()
 def service_create(context, values):
 
-    service_creation_lock.acquire()
-    print("acquired lock from %s" % (str(service_creation_lock)))
+    # service_creation_lock.acquire()
+    print("acquired lock from %s" % (values))
 
     service_binary = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
@@ -527,18 +540,17 @@ def service_create(context, values):
             if not CONF.enable_new_services:
                 service_ref.disabled = True
             service_ref.save()
-            print("released lock from %s" % (str(service_creation_lock)))
-            service_creation_lock.release()
+            print("released lock from %s" % (values))
         else:
-            print("released lock from %s" % (str(service_creation_lock)))
-            service_creation_lock.release()
+            print("released lock from %s" % (values))
             raise exception.ServiceTopicExists(host=values.get('host'),
                 topic=values.get('topic'))
     else:
-        print("released lock from %s" % (str(service_creation_lock)))
-        service_creation_lock.release()
+        print("released lock from %s" % (values))
         raise exception.ServiceBinaryExists(host=values.get('host'),
             binary=values.get('binary'))
+
+    
     return service_ref
 
 
