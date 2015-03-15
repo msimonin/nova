@@ -44,10 +44,10 @@ class DbDriver(api.ServiceGroupDriver):
 
         with self.join_lock:
             service_key = str(service)
-            if registered_members.has_key(service):
+            if self.registered_members.has_key(service):
                 print("service is already registered with %s, i stop the join.")
                 return
-            registered_members[service_key] = service
+            self.registered_members[service_key] = service
             msg = _('DB_Driver: join new ServiceGroup member %(member_id)s to '
                         'the %(group_id)s group, service = %(service)s')
             LOG.debug(msg, {'member_id': member_id, 'group_id': group_id,
