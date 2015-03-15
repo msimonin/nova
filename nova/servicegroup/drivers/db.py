@@ -44,7 +44,7 @@ class DbDriver(api.ServiceGroupDriver):
 
         with self.join_lock:
             service_key = str(service)
-            if self.registered_members.has_key(service):
+            if self.registered_members.has_key(service_key):
                 print("service is already registered with %s, i stop the join.")
                 return
             self.registered_members[service_key] = service
