@@ -244,6 +244,7 @@ class NovaBase(models.SoftDeleteMixin,
     def update(self, values, synchronize_session='evaluate', request_uuid=uuid.uuid1(), do_save=True):
 
         primitive = (int, str, bool)
+        may_save = False
 
         """Set default values"""
         try:
@@ -264,17 +265,20 @@ class NovaBase(models.SoftDeleteMixin,
             pass
 
         for key in values:
+            previous_value = getattr(self, key, None)
             value = values[key]
-            print(">> %s[%s] <- %s" % (self.__tablename__, key, value))
-            try:
-                setattr(self, key, value)
-            except Exception as e:
-                print(e)
-                pass
+            if previous_value != value:
+                may_save = True
+                print(">> %s[%s] <- %s" % (self.__tablename__, key, value))
+                try:
+                    setattr(self, key, value)
+                except Exception as e:
+                    print(e)
+                    pass
 
         self.update_foreign_keys()
 
-        if do_save:
+        if do_save and may_save:
             self.save(request_uuid=request_uuid)
         return self
 
