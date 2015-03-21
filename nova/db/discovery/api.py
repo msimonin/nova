@@ -72,6 +72,8 @@ except:
     pass
 
 # RIAK
+from nova.db.discovery.query import or_
+from nova.db.discovery.query import and_
 from lib.rome.core.orm.query import Query as RiakModelQuery
 from nova.db.discovery import models
 
