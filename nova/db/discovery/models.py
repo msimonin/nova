@@ -42,6 +42,7 @@ from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy import orm
 from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
 
+CONF = cfg.CONF
 BASE = declarative_base()
 
 def MediumText():
