@@ -72,25 +72,7 @@ except:
     pass
 
 # RIAK
-from nova.db.discovery.query import or_
-from nova.db.discovery.query import and_
-import itertools
-import traceback
-import uuid
-import pprint
-import riak
-import inspect
-from inspect import getmembers
-from sqlalchemy.util._collections import KeyedTuple
-import netaddr
-from sqlalchemy.sql.expression import BinaryExpression
-from sqlalchemy.orm.evaluator import EvaluatorCompiler
-from sqlalchemy.orm.collections import InstrumentedList
 from nova.db.discovery import models
-import pytz
-from desimplifier import ObjectDesimplifier
-from utils import find_table_name
-from query import RiakModelQuery
 
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',
