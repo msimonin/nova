@@ -72,6 +72,7 @@ except:
     pass
 
 # RIAK
+from lib.rome.core.orm.query import Query as RiakModelQuery
 from nova.db.discovery import models
 
 db_opts = [
