@@ -406,12 +406,9 @@ class Volume(BASE, NovaBase):
 @global_scope
 class Quota(BASE, NovaBase):
     """Represents a single quota override for a project.
-
     If there is no row for a given project id and resource, then the
-    default for the quota @global_scope
-class is used.  If there is no row for a
-    given quota @global_scope
-class and resource, then the default for the
+    default for the quota class is used.  If there is no row for a
+    given quota class and resource, then the default for the
     deployment is used. If the row is present but the hard limit is
     Null, then the resource is unlimited.
     """
@@ -852,8 +849,7 @@ class VirtualInterface(BASE, NovaBase):
     uuid = Column(String(36))
 
 
-# TODO(vish): can these both come from the same base@global_scope
-class?
+# TODO(vish): can these both come from the same baseclass?
 @global_scope
 class FixedIp(BASE, NovaBase):
     """Represents a fixed ip for an instance."""
