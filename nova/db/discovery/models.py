@@ -47,6 +47,7 @@ BASE = declarative_base()
 def MediumText():
     return Text().with_variant(MEDIUMTEXT(), 'mysql')
 
+@global_scope
 class Service(BASE, NovaBase):
     """Represents a running service on a host."""
 
@@ -67,6 +68,7 @@ class Service(BASE, NovaBase):
     disabled_reason = Column(String(255))
 
 
+@global_scope
 class ComputeNode(BASE, NovaBase):
     """Represents a running compute service on a host."""
 
@@ -131,6 +133,7 @@ class ComputeNode(BASE, NovaBase):
     numa_topology = Column(Text)
 
 
+@global_scope
 class Certificate(BASE, NovaBase):
     """Represents a x509 certificate."""
     __tablename__ = 'certificates'
@@ -145,6 +148,7 @@ class Certificate(BASE, NovaBase):
     file_name = Column(String(255))
 
 
+@global_scope
 class Instance(BASE, NovaBase):
     """Represents a guest VM."""
     __tablename__ = 'instances'
@@ -286,6 +290,7 @@ class Instance(BASE, NovaBase):
     cleaned = Column(Integer, default=0)
 
 
+@global_scope
 class InstanceInfoCache(BASE, NovaBase):
     """Represents a cache of information about an instance
     """
@@ -307,6 +312,7 @@ class InstanceInfoCache(BASE, NovaBase):
                             primaryjoin=instance_uuid == Instance.uuid)
 
 
+@global_scope
 class InstanceExtra(BASE, NovaBase):
     __tablename__ = 'instance_extra'
     __table_args__ = (
@@ -323,6 +329,7 @@ class InstanceExtra(BASE, NovaBase):
                             primaryjoin=instance_uuid == Instance.uuid)
 
 
+@global_scope
 class InstanceTypes(BASE, NovaBase):
     """Represents possible flavors for instances.
 
@@ -354,6 +361,7 @@ class InstanceTypes(BASE, NovaBase):
     is_public = Column(Boolean, default=True)
 
 
+@global_scope
 class Volume(BASE, NovaBase):
     """Represents a block storage device that can be attached to a VM."""
     __tablename__ = 'volumes'
@@ -395,12 +403,15 @@ class Volume(BASE, NovaBase):
     volume_type_id = Column(Integer)
 
 
+@global_scope
 class Quota(BASE, NovaBase):
     """Represents a single quota override for a project.
 
     If there is no row for a given project id and resource, then the
-    default for the quota class is used.  If there is no row for a
-    given quota class and resource, then the default for the
+    default for the quota @global_scope
+class is used.  If there is no row for a
+    given quota @global_scope
+class and resource, then the default for the
     deployment is used. If the row is present but the hard limit is
     Null, then the resource is unlimited.
     """
@@ -419,6 +430,7 @@ class Quota(BASE, NovaBase):
     hard_limit = Column(Integer)
 
 
+@global_scope
 class ProjectUserQuota(BASE, NovaBase):
     """Represents a single quota override for a user with in a project."""
 
@@ -441,9 +453,9 @@ class ProjectUserQuota(BASE, NovaBase):
     hard_limit = Column(Integer)
 
 
+@global_scope
 class QuotaClass(BASE, NovaBase):
     """Represents a single quota override for a quota class.
-
     If there is no row for a given quota class and resource, then the
     default for the deployment is used.  If the row is present but the
     hard limit is Null, then the resource is unlimited.
@@ -461,6 +473,7 @@ class QuotaClass(BASE, NovaBase):
     hard_limit = Column(Integer)
 
 
+@global_scope
 class QuotaUsage(BASE, NovaBase):
     """Represents the current usage for a given resource."""
 
@@ -484,6 +497,7 @@ class QuotaUsage(BASE, NovaBase):
     until_refresh = Column(Integer)
 
 
+@global_scope
 class Reservation(BASE, NovaBase):
     """Represents a resource reservation for quotas."""
 
@@ -512,6 +526,7 @@ class Reservation(BASE, NovaBase):
                          'QuotaUsage.deleted == 0)')
 
 
+@global_scope
 class Snapshot(BASE, NovaBase):
     """Represents a block storage device that can be attached to a VM."""
     __tablename__ = 'snapshots'
@@ -540,6 +555,7 @@ class Snapshot(BASE, NovaBase):
     display_description = Column(String(255))
 
 
+@global_scope
 class BlockDeviceMapping(BASE, NovaBase):
     """Represents block device mapping that is defined by EC2."""
     __tablename__ = "block_device_mapping"
@@ -600,6 +616,7 @@ class BlockDeviceMapping(BASE, NovaBase):
     connection_info = Column(MediumText())
 
 
+@global_scope
 class IscsiTarget(BASE, NovaBase):
     """Represents an iscsi target for a given host."""
     __tablename__ = 'iscsi_targets'
@@ -619,6 +636,7 @@ class IscsiTarget(BASE, NovaBase):
                                            'IscsiTarget.deleted==0)')
 
 
+@global_scope
 class SecurityGroupInstanceAssociation(BASE, NovaBase):
     __tablename__ = 'security_group_instance_association'
     __table_args__ = (
@@ -630,6 +648,7 @@ class SecurityGroupInstanceAssociation(BASE, NovaBase):
     instance_uuid = Column(String(36), ForeignKey('instances.uuid'))
 
 
+@global_scope
 class SecurityGroup(BASE, NovaBase):
     """Represents a security group."""
     __tablename__ = 'security_groups'
@@ -660,6 +679,7 @@ class SecurityGroup(BASE, NovaBase):
                              backref='security_groups')
 
 
+@global_scope
 class SecurityGroupIngressRule(BASE, NovaBase):
     """Represents a rule in a security group."""
     __tablename__ = 'security_group_rules'
@@ -688,6 +708,7 @@ class SecurityGroupIngressRule(BASE, NovaBase):
         'SecurityGroupIngressRule.deleted == 0)')
 
 
+@global_scope
 class SecurityGroupIngressDefaultRule(BASE, NovaBase):
     __tablename__ = 'security_group_default_rules'
     __table_args__ = ()
@@ -698,6 +719,7 @@ class SecurityGroupIngressDefaultRule(BASE, NovaBase):
     cidr = Column(types.CIDR())
 
 
+@global_scope
 class ProviderFirewallRule(BASE, NovaBase):
     """Represents a rule in a security group."""
     __tablename__ = 'provider_fw_rules'
@@ -710,6 +732,7 @@ class ProviderFirewallRule(BASE, NovaBase):
     cidr = Column(types.CIDR())
 
 
+@global_scope
 class KeyPair(BASE, NovaBase):
     """Represents a public key pair for ssh."""
     __tablename__ = 'key_pairs'
@@ -727,6 +750,7 @@ class KeyPair(BASE, NovaBase):
     public_key = Column(MediumText())
 
 
+@global_scope
 class Migration(BASE, NovaBase):
     """Represents a running host-to-host migration."""
     __tablename__ = 'migrations'
@@ -758,6 +782,7 @@ class Migration(BASE, NovaBase):
                                         '0)')
 
 
+@global_scope
 class Network(BASE, NovaBase):
     """Represents a network."""
     __tablename__ = 'networks'
@@ -810,6 +835,7 @@ class Network(BASE, NovaBase):
     share_address = Column(Boolean, default=False)
 
 
+@global_scope
 class VirtualInterface(BASE, NovaBase):
     """Represents a virtual interface on an instance."""
     __tablename__ = 'virtual_interfaces'
@@ -826,7 +852,9 @@ class VirtualInterface(BASE, NovaBase):
     uuid = Column(String(36))
 
 
-# TODO(vish): can these both come from the same baseclass?
+# TODO(vish): can these both come from the same base@global_scope
+class?
+@global_scope
 class FixedIp(BASE, NovaBase):
     """Represents a fixed ip for an instance."""
     __tablename__ = 'fixed_ips'
@@ -883,6 +911,7 @@ class FixedIp(BASE, NovaBase):
                                 'VirtualInterface.deleted == 0)')
 
 
+@global_scope
 class FloatingIp(BASE, NovaBase):
     """Represents a floating ip that dynamically forwards to a fixed ip."""
     __tablename__ = 'floating_ips'
@@ -913,6 +942,7 @@ class FloatingIp(BASE, NovaBase):
                                 'FixedIp.deleted == 0)')
 
 
+@global_scope
 class DNSDomain(BASE, NovaBase):
     """Represents a DNS domain with availability zone or project info."""
     __tablename__ = 'dns_domains'
@@ -927,6 +957,7 @@ class DNSDomain(BASE, NovaBase):
     project_id = Column(String(255))
 
 
+@global_scope
 class ConsolePool(BASE, NovaBase):
     """Represents pool of consoles on the same physical node."""
     __tablename__ = 'console_pools'
@@ -945,6 +976,7 @@ class ConsolePool(BASE, NovaBase):
     compute_host = Column(String(255))
 
 
+@global_scope
 class Console(BASE, NovaBase):
     """Represents a console session for an instance."""
     __tablename__ = 'consoles'
@@ -960,6 +992,7 @@ class Console(BASE, NovaBase):
     pool = orm.relationship(ConsolePool, backref=orm.backref('consoles'))
 
 
+@global_scope
 class InstanceMetadata(BASE, NovaBase):
     """Represents a user-provided metadata key/value pair for an instance."""
     __tablename__ = 'instance_metadata'
@@ -978,6 +1011,7 @@ class InstanceMetadata(BASE, NovaBase):
                                 'InstanceMetadata.deleted == 0)')
 
 
+@global_scope
 class InstanceSystemMetadata(BASE, NovaBase):
     """Represents a system-owned metadata key/value pair for an instance."""
     __tablename__ = 'instance_system_metadata'
@@ -996,6 +1030,7 @@ class InstanceSystemMetadata(BASE, NovaBase):
                             primaryjoin=primary_join)
 
 
+@global_scope
 class InstanceTypeProjects(BASE, NovaBase):
     """Represent projects associated instance_types."""
     __tablename__ = "instance_type_projects"
@@ -1016,6 +1051,7 @@ class InstanceTypeProjects(BASE, NovaBase):
                  'InstanceTypeProjects.deleted == 0)')
 
 
+@global_scope
 class InstanceTypeExtraSpecs(BASE, NovaBase):
     """Represents additional specs as key/value pairs for an instance_type."""
     __tablename__ = 'instance_type_extra_specs'
@@ -1040,6 +1076,7 @@ class InstanceTypeExtraSpecs(BASE, NovaBase):
                  'InstanceTypeExtraSpecs.deleted == 0)')
 
 
+@global_scope
 class Cell(BASE, NovaBase):
     """Represents parent and child cells of this cell.  Cells can
     have multiple parents and children, so there could be any number
@@ -1062,6 +1099,7 @@ class Cell(BASE, NovaBase):
     is_parent = Column(Boolean())
 
 
+@global_scope
 class AggregateHost(BASE, NovaBase):
     """Represents a host that is member of an aggregate."""
     __tablename__ = 'aggregate_hosts'
@@ -1075,6 +1113,7 @@ class AggregateHost(BASE, NovaBase):
     aggregate_id = Column(Integer, ForeignKey('aggregates.id'), nullable=False)
 
 
+@global_scope
 class AggregateMetadata(BASE, NovaBase):
     """Represents a metadata key/value pair for an aggregate."""
     __tablename__ = 'aggregate_metadata'
@@ -1090,6 +1129,7 @@ class AggregateMetadata(BASE, NovaBase):
     aggregate_id = Column(Integer, ForeignKey('aggregates.id'), nullable=False)
 
 
+@global_scope
 class Aggregate(BASE, NovaBase):
     """Represents a cluster of hosts that exists in this zone."""
     __tablename__ = 'aggregates'
@@ -1127,6 +1167,7 @@ class Aggregate(BASE, NovaBase):
         return self.metadetails['availability_zone']
 
 
+@global_scope
 class AgentBuild(BASE, NovaBase):
     """Represents an agent build."""
     __tablename__ = 'agent_builds'
@@ -1145,6 +1186,7 @@ class AgentBuild(BASE, NovaBase):
     md5hash = Column(String(255))
 
 
+@global_scope
 class BandwidthUsage(BASE, NovaBase):
     """Cache for instance bandwidth usage data pulled from the hypervisor."""
     __tablename__ = 'bw_usage_cache'
@@ -1163,6 +1205,7 @@ class BandwidthUsage(BASE, NovaBase):
     last_ctr_out = Column(BigInteger)
 
 
+@global_scope
 class VolumeUsage(BASE, NovaBase):
     """Cache for volume usage data pulled from the hypervisor."""
     __tablename__ = 'volume_usage_cache'
@@ -1185,6 +1228,7 @@ class VolumeUsage(BASE, NovaBase):
     curr_write_bytes = Column(BigInteger, default=0)
 
 
+@global_scope
 class S3Image(BASE, NovaBase):
     """Compatibility layer for the S3 image service talking to Glance."""
     __tablename__ = 's3_images'
@@ -1193,6 +1237,7 @@ class S3Image(BASE, NovaBase):
     uuid = Column(String(36), nullable=False)
 
 
+@global_scope
 class VolumeIdMapping(BASE, NovaBase):
     """Compatibility layer for the EC2 volume service."""
     __tablename__ = 'volume_id_mappings'
@@ -1201,6 +1246,7 @@ class VolumeIdMapping(BASE, NovaBase):
     uuid = Column(String(36), nullable=False)
 
 
+@global_scope
 class SnapshotIdMapping(BASE, NovaBase):
     """Compatibility layer for the EC2 snapshot service."""
     __tablename__ = 'snapshot_id_mappings'
@@ -1209,6 +1255,7 @@ class SnapshotIdMapping(BASE, NovaBase):
     uuid = Column(String(36), nullable=False)
 
 
+@global_scope
 class InstanceFault(BASE, NovaBase):
     __tablename__ = 'instance_faults'
     __table_args__ = (
@@ -1226,6 +1273,7 @@ class InstanceFault(BASE, NovaBase):
     host = Column(String(255))
 
 
+@global_scope
 class InstanceAction(BASE, NovaBase):
     """Track client actions on an instance.
 
@@ -1250,6 +1298,7 @@ class InstanceAction(BASE, NovaBase):
     message = Column(String(255))
 
 
+@global_scope
 class InstanceActionEvent(BASE, NovaBase):
     """Track events that occur during an InstanceAction."""
     __tablename__ = 'instance_actions_events'
@@ -1266,6 +1315,7 @@ class InstanceActionEvent(BASE, NovaBase):
     details = Column(Text)
 
 
+@global_scope
 class InstanceIdMapping(BASE, NovaBase):
     """Compatibility layer for the EC2 instance service."""
     __tablename__ = 'instance_id_mappings'
@@ -1276,6 +1326,7 @@ class InstanceIdMapping(BASE, NovaBase):
     uuid = Column(String(36), nullable=False)
 
 
+@global_scope
 class TaskLog(BASE, NovaBase):
     """Audit log for background periodic tasks."""
     __tablename__ = 'task_log'
@@ -1301,6 +1352,7 @@ class TaskLog(BASE, NovaBase):
     errors = Column(Integer(), default=0)
 
 
+@global_scope
 class InstanceGroupMember(BASE, NovaBase):
     """Represents the members for an instance group."""
     __tablename__ = 'instance_group_member'
@@ -1313,6 +1365,7 @@ class InstanceGroupMember(BASE, NovaBase):
                       nullable=False)
 
 
+@global_scope
 class InstanceGroupPolicy(BASE, NovaBase):
     """Represents the policy type for an instance group."""
     __tablename__ = 'instance_group_policy'
@@ -1325,6 +1378,7 @@ class InstanceGroupPolicy(BASE, NovaBase):
                       nullable=False)
 
 
+@global_scope
 class InstanceGroup(BASE, NovaBase):
     """Represents an instance group.
 
@@ -1361,6 +1415,7 @@ class InstanceGroup(BASE, NovaBase):
         return [m.instance_id for m in self._members]
 
 
+@global_scope
 class PciDevice(BASE, NovaBase):
     """Represents a PCI host device that can be passed through to instances.
     """
