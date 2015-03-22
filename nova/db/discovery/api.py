@@ -611,23 +611,21 @@ def compute_node_get_all(context, no_date_fields):
     #     node['service'] = services.get(proxy['service_id'])
 
     #     compute_nodes.append(node)
-    from nova.db.discovery.simplifier import ObjectSimplifier
-    from nova.db.discovery.desimplifier import ObjectDesimplifier
+    from lib.rome.core.dataformat.converter import JsonConverter
+    from lib.rome.core.dataformat.deconverter import JsonDeconverter
 
     query = RiakModelQuery(models.ComputeNode)
     compute_nodes = query.all()
 
     def novabase_to_dict(ref):
         request_uuid = uuid.uuid1()
-        object_simplifier = ObjectSimplifier(request_uuid=request_uuid)
-        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
+        converter = JsonConverter(request_uuid=request_uuid)
+        deconverter = JsonDeconverter(request_uuid=request_uuid)
 
-        simplified_object = object_simplifier.simplify(ref)
-        simplified_object.pop("metadata_novabase_classname")
-
-        desimplified_object = object_desimplifier.desimplify(simplified_object)
+        json_object = converter.simplify(ref)
+        json_object.pop("metadata_novabase_classname")
         
-        return desimplified_object
+        return deconverter.desimplify(json_object)
 
     result = []
     for each in compute_nodes:
