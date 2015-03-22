@@ -295,6 +295,7 @@ def extract_flavor(instance, prefix=''):
 
     instance_type = {}
     sys_meta = utils.instance_sys_meta(instance)
+    print("* extract_flavor: utils.instance_sys_meta(instance) => %s" % sys_meta)
     for key, type_fn in system_metadata_flavor_props.items():
         type_key = '%sinstance_type_%s' % (prefix, key)
         instance_type[key] = type_fn(sys_meta[type_key])
