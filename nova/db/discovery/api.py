@@ -1990,35 +1990,35 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
                     )
                 query_prefix = query_prefix.filter(not_soft_deleted)
 
-    if 'cleaned' in filters:
-        if filters.pop('cleaned'):
-            query_prefix = query_prefix.filter(models.Instance.cleaned == 1)
-        else:
-            query_prefix = query_prefix.filter(models.Instance.cleaned == 0)
+    # if 'cleaned' in filters:
+    #     if filters.pop('cleaned'):
+    #         query_prefix = query_prefix.filter(models.Instance.cleaned == 1)
+    #     else:
+    #         query_prefix = query_prefix.filter(models.Instance.cleaned == 0)
 
-    if not context.is_admin:
-        # If we're not admin context, add appropriate filter..
-        if context.project_id:
-            filters['project_id'] = context.project_id
-        else:
-            filters['user_id'] = context.user_id
+    # if not context.is_admin:
+    #     # If we're not admin context, add appropriate filter..
+    #     if context.project_id:
+    #         filters['project_id'] = context.project_id
+    #     else:
+    #         filters['user_id'] = context.user_id
 
-    # Filters for exact matches that we can do along with the SQL query...
-    # For other filters that don't match this, we will do regexp matching
-    exact_match_filter_names = ['project_id', 'user_id', 'image_ref',
-                                'vm_state', 'instance_type_id', 'uuid',
-                                'metadata', 'host', 'task_state',
-                                'system_metadata']
+    # # Filters for exact matches that we can do along with the SQL query...
+    # # For other filters that don't match this, we will do regexp matching
+    # exact_match_filter_names = ['project_id', 'user_id', 'image_ref',
+    #                             'vm_state', 'instance_type_id', 'uuid',
+    #                             'metadata', 'host', 'task_state',
+    #                             'system_metadata']
 
-    # Filter the query
-    query_prefix = exact_filter(query_prefix, models.Instance,
-                                filters, exact_match_filter_names)
+    # # Filter the query
+    # query_prefix = exact_filter(query_prefix, models.Instance,
+    #                             filters, exact_match_filter_names)
 
-    query_prefix = regex_filter(query_prefix, models.Instance, filters)
-    query_prefix = tag_filter(context, query_prefix, models.Instance,
-                              models.InstanceMetadata,
-                              models.InstanceMetadata.instance_uuid,
-                              filters)
+    # query_prefix = regex_filter(query_prefix, models.Instance, filters)
+    # query_prefix = tag_filter(context, query_prefix, models.Instance,
+    #                           models.InstanceMetadata,
+    #                           models.InstanceMetadata.instance_uuid,
+    #                           filters)
 
     # paginate query
     # if marker is not None:
@@ -2035,8 +2035,8 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
     # print("filters: %s" % (filters))
     # query_prefix = RiakModelQuery(models.Instance).filter_dict(filters_)
     # query_prefix = RiakModelQuery(models.Instance)
-
-    return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
+    return query_prefix.all()
+    # return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
 
 
 def tag_filter(context, query, model, model_metadata,
