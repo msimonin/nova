@@ -54,74 +54,68 @@ CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
 
-class ApiProxy:
+class DbApiProxy:
 
     """Class that enables a "visual" comparison between two objects (<a> and <b>): when a developer wants to test if some
     methods of <a> differs from some methodes of <b>, this class can be used. """
 
-    def __init__(self, a, b, label_a, label_b, return_first=True):
-        self.a = a
-        self.b = b
-        self.label_a = label_a
-        self.label_b = label_b
-        self.return_first = return_first
+    def __init__(self, mysql_api_impl, kvs_api_impl, label_mysql, label_kvs, use_mysql=True):
+        self.mysql_api_impl = mysql_api_impl
+        self.kvs_api_impl = kvs_api_impl
+        self.label_mysql = label_mysql
+        self.label_kvs = label_kvs
+        self.use_mysql = use_mysql
 
     def __getattr__(self, attr):
 
-        ret_a = getattr(self.a, attr)
-        ret_b = getattr(self.b, attr)
+        ret_mysql = getattr(self.mysql_api_impl, attr)
+        ret_kvs = getattr(self.kvs_api_impl, attr)
 
-        if hasattr(ret_a, "__call__") and hasattr(ret_b, "__call__"):
-            callable_object = self.FunctionWrapper(ret_a, ret_b, attr, self.label_a, self.label_b, self.return_first)
+        if hasattr(ret_mysql, "__call__") and hasattr(ret_kvs, "__call__"):
+            callable_object = self.FunctionWrapper(ret_mysql, ret_kvs, attr, self.label_mysql, self.label_kvs, self.use_mysql)
             return callable_object
-        return ret_a
+        return ret_mysql
 
     class FunctionWrapper:
 
         """Class that is used to "simulate" the call to a functions on two objects: it enables to measure the difference
         between the two implementations. This class will target the creation of runnable objects."""
 
-        def __init__(self, callable_a, callable_b, call_name, label_a, label_b, return_first):
-            self.callable_a = callable_a
-            self.callable_b = callable_b
+        def __init__(self, callable_mysql, callable_kvs, call_name, label_mysql, label_kvs, use_mysql):
+            self.callable_mysql = callable_mysql
+            self.callable_kvs = callable_kvs
             self.call_name = call_name
-            self.label_a = label_a
-            self.label_b = label_b
-            self.return_first = return_first
+            self.label_mysql = label_mysql
+            self.label_kvs = label_kvs
+            self.use_mysql = use_mysql
 
         def __call__(self, *args, **kwargs):
 
             import time
             import json
             current_milli_time = lambda: int(round(time.time() * 1000))
+
             time1 = current_milli_time()
-            # result_callable_a = self.callable_a(*args, **kwargs)
-            # try:
-            result_callable_b = self.callable_b(*args, **kwargs)
-            # except:
-            #     result_callable_b = "ERROR"
-            #     pass
+            if self.use_mysql:
+                result_callable = self.callable_mysql(*args, **kwargs)
+                label = label_mysql	
+            else:
+                result_callable = self.callable_kvs(*args, **kwargs)
+                label = label_kvs
             time2 = current_milli_time()
-            # pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
-            # pretty_print_callable_b = "%s.%s(args=%s, kwargs=%s) => [%s]" % (self.label_b, self.call_name, str(args), str(kwargs), str(result_callable_b))
-            pretty_print_callable_b = """{"class": "nova_api_call", "method": "%s.%s", "args": %s, "kwargs": %s, "result": %s, "timestamp": %i, "duration": %i}""" % (
-                self.label_b, self.call_name, json.dumps(str(args)), json.dumps(str(kwargs)), json.dumps(str(result_callable_b)), time1, time2 - time1
+            
+            pretty_print_callable = """{"class": "nova_api_call", "driver": "%s", "method": "%s", "args": %s, "kwargs": %s, "result": %s, "timestamp": %i, "duration": %i}""" % (
+                label, self.call_name, json.dumps(str(args)), json.dumps(str(kwargs)), json.dumps(str(result_callable)), time1, time2 - time1
             )
-            # print(pretty_print_callable_a)
-            print(pretty_print_callable_b)
+
+            print(pretty_print_callable)
 
             fo = open("/opt/logs/db_api.log", "a")
 
-            # fo.write(pretty_print_callable_a+"\n")
-            fo.write(pretty_print_callable_b+"\n")
-            fo.write("\n")
-
+            fo.write(pretty_print_callable+"\n")
             fo.close()
 
-            if self.return_first:
-                return result_callable_a
-            else:
-                return result_callable_b
+            return result_callable
 
 # _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db.discovery.api'}
@@ -130,7 +124,7 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = ApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", False)
+IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", False)
 
 class DualImpl:
     def __init__(self):
