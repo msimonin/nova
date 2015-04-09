@@ -91,16 +91,21 @@ class ApiProxy:
 
         def __call__(self, *args, **kwargs):
 
+            import time
+            current_milli_time = lambda: int(round(time.time() * 1000))
+            time1 = current_milli_time()
             # result_callable_a = self.callable_a(*args, **kwargs)
             # try:
             result_callable_b = self.callable_b(*args, **kwargs)
             # except:
             #     result_callable_b = "ERROR"
             #     pass
-
+            time2 = current_milli_time()
             # pretty_print_callable_a = "%s.%s => [%s]" % (self.label_a, self.call_name, str(result_callable_a))
-            pretty_print_callable_b = "%s.%s(args=%s, kwargs=%s) => [%s]" % (self.label_b, self.call_name, str(args), str(kwargs), str(result_callable_b))
-            
+            # pretty_print_callable_b = "%s.%s(args=%s, kwargs=%s) => [%s]" % (self.label_b, self.call_name, str(args), str(kwargs), str(result_callable_b))
+            pretty_print_callable_b = """{"class": "nova_api_call", "method": "%s.%s", "args": "%s", "kwargs": "%s", "result": "%s", "timestamp": %i, "duration": %i}""" % (
+                self.label_b, self.call_name, str(args), str(kwargs), str(result_callable_b), time1, time2 - time1
+            )
             # print(pretty_print_callable_a)
             print(pretty_print_callable_b)
 
