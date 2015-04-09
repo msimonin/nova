@@ -98,10 +98,10 @@ class DbApiProxy:
             time1 = current_milli_time()
             if self.use_mysql:
                 result_callable = self.callable_mysql(*args, **kwargs)
-                label = label_mysql	
+                label = self.label_mysql	
             else:
                 result_callable = self.callable_kvs(*args, **kwargs)
-                label = label_kvs
+                label = self.label_kvs
             time2 = current_milli_time()
             
             pretty_print_callable = """{"class": "nova_api_call", "driver": "%s", "method": "%s", "args": %s, "kwargs": %s, "result": %s, "timestamp": %i, "duration": %i}""" % (
