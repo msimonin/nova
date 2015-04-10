@@ -48,6 +48,9 @@ db_opts = [
     cfg.StrOpt('snapshot_name_template',
                default='snapshot-%s',
                help='Template string to be used to generate snapshot names'),
+    cfg.StrOpt('db_backend',
+               default='sqlalchemy',
+               help='The backend to use for bare-metal database'),
 ]
 
 CONF = cfg.CONF
