@@ -132,10 +132,10 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = discovery_api
 
 db_backend = "sqlalchemy"
-if "database" in NovaConfig.sections():
-    database_section = NovaConfig.sections()["database"]
-    if "backend" in database_section:
-        db_backend = database_section["backend"]
+try:
+    db_backend = NovaConfig.get("database", "backend")
+except:
+    pass
 
 IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", db_backend is "sqlalchemy")
 
