@@ -37,6 +37,10 @@ from nova.openstack.common import log as logging
 from nova.db.sqlalchemy import api as mysql_api
 from nova.db.discovery import api as discovery_api
 
+import ConfigParser
+
+NovaConfig = ConfigParser.ConfigParser()
+NovaConfig.read("/etc/nova/nova.conf")
 
 db_opts = [
     cfg.BoolOpt('enable_new_services',
@@ -127,7 +131,9 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", CONF.db_backend is "sqlalchemy")
+db_backend = NovaConfig.defaults()["db_backend"]
+
+IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", db_backend is "sqlalchemy")
 
 class DualImpl:
     def __init__(self):
