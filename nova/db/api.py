@@ -131,7 +131,10 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 # IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # IMPL = discovery_api
 
-db_backend = NovaConfig.defaults()["db_backend"]
+db_backend = "sqlalchemy"
+if "database" in NovaConfig.sections():
+    if backend in NovaConfig.sections()["database"]:
+        db_backend = NovaConfig.defaults()["db_backend"]
 
 IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", db_backend is "sqlalchemy")
 
