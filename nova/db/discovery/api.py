@@ -4961,7 +4961,7 @@ def _instance_system_metadata_get_multi(context, instance_uuids,
     result = []
     metadata_list = model_query(context, models.InstanceSystemMetadata,
         session=session, use_slave=use_slave).all()
-    filtered_metadata_list = [x for x in metadata if x.instance_uuid in instance_uuids]
+    filtered_metadata_list = [x for x in metadata_list if x.instance_uuid in instance_uuids]
     result = filtered_metadata_list
     # for instance_uuid in instance_uuids:
     #     query = model_query(context, models.InstanceSystemMetadata,
