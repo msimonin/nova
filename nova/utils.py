@@ -883,13 +883,10 @@ def instance_meta(instance):
 
 def instance_sys_meta(instance):
     if not instance.get('system_metadata'):
-        print("instance_sys_meta (a)")
         return {}
     if isinstance(instance['system_metadata'], dict):
-        print("instance_sys_meta (b)")
         return instance['system_metadata']
     else:
-        print("instance_sys_meta (c)")
         return metadata_to_dict(instance['system_metadata'])
 
 

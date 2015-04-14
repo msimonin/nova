@@ -1407,7 +1407,6 @@ def fixed_ip_get_by_instance(context, instance_uuid):
     if not result:
         raise exception.FixedIpNotFoundForInstance(instance_uuid=instance_uuid)
     # TODO(Jonathan): quick fix
-    print("debugging discovery: result: %s" % (str(result)))
     return [x[0] for x in result]
     # return result
 
@@ -1955,8 +1954,6 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
     filters = filters.copy()
     filters_ = {}
 
-    print("[FILT] filters => %s" % (filters))
-
     query_prefix = session.query(models.Instance)
     if 'changes-since' in filters:
         filters.pop('changes_since')
@@ -2234,7 +2231,6 @@ def instance_get_all_by_host(context, host,
                              use_slave=False):
     instances = _instance_get_all_query(context,
                               use_slave=use_slave).filter_by(host=host).all()
-    print(">> %s" % (instances))
     return _instances_fill_metadata(context, instances, ["system_metadata"])
 
 
@@ -2679,9 +2675,6 @@ def network_create_safe(context, values):
     network_ref = models.Network()
     network_ref['uuid'] = str(uuid.uuid4())
     network_ref.update(values)
-
-    print("updating with values (a): %s" % (values))
-    print("updating with values (b): %s" % (network_ref.injected))
 
     try:
         network_ref.save()
@@ -4965,14 +4958,16 @@ def instance_metadata_update(context, instance_uuid, metadata, delete):
 
 def _instance_system_metadata_get_multi(context, instance_uuids,
                                         session=None, use_slave=False):
-    print("[DEBUG] from _instance_system_metadata_get_multi")
-    print("[DEBUG] instance_uuids => %s" % (instance_uuids))
     result = []
-    for instance_uuid in instance_uuids:
-        query = model_query(context, models.InstanceSystemMetadata,
-            session=session, use_slave=use_slave).\
-            filter(models.InstanceSystemMetadata.instance_uuid==instance_uuid)
-        result += query.all()
+    metadata_list = model_query(context, models.InstanceSystemMetadata,
+        session=session, use_slave=use_slave).all()
+    filtered_metadata_list = [x for x in metadata if x.instance_uuid in instance_uuids]
+    result = filtered_metadata_list
+    # for instance_uuid in instance_uuids:
+    #     query = model_query(context, models.InstanceSystemMetadata,
+    #         session=session, use_slave=use_slave).\
+    #         filter(models.InstanceSystemMetadata.instance_uuid==instance_uuid)
+    #     result += query.all()
 
     return result
     # if not instance_uuids:
