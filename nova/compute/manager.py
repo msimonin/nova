@@ -5723,6 +5723,11 @@ class ComputeManager(manager.Manager):
                 self._query_driver_power_state_and_sync(context, db_instance)
 
             try:
+                # TODO(jonathan): to reduce peak db usage, wait randomly.
+                import random
+                random.seed(0)
+                time_to_wait = random.randrange(0, CONF.sync_power_state_interval)
+                sleep(time_to_wait)
                 query_driver_power_state_and_sync()
             except Exception:
                 LOG.exception(_LE("Periodic sync_power_state task had an "
