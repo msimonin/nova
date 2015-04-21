@@ -42,6 +42,8 @@ from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy import orm
 from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
 
+from lib.rome.utils.SecondaryIndexDecorator import secondary_index_decorator
+
 CONF = cfg.CONF
 BASE = declarative_base()
 
@@ -150,6 +152,9 @@ class Certificate(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("uuid")
+@secondary_index_decorator("host")
+@secondary_index_decorator("node")
 class Instance(BASE, NovaBase):
     """Represents a guest VM."""
     __tablename__ = 'instances'
@@ -990,6 +995,7 @@ class Console(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class InstanceMetadata(BASE, NovaBase):
     """Represents a user-provided metadata key/value pair for an instance."""
     __tablename__ = 'instance_metadata'
@@ -1009,6 +1015,7 @@ class InstanceMetadata(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class InstanceSystemMetadata(BASE, NovaBase):
     """Represents a system-owned metadata key/value pair for an instance."""
     __tablename__ = 'instance_system_metadata'
