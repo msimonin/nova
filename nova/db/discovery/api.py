@@ -1244,6 +1244,39 @@ def fixed_ip_disassociate(context, address):
                                          'virtual_interface_id': None})
 
 
+# @require_admin_context
+# def fixed_ip_disassociate_all_by_timeout(context, host, time):
+#     session = get_session()
+#     # NOTE(vish): only update fixed ips that "belong" to this
+#     #             host; i.e. the network host or the instance
+#     #             host matches. Two queries necessary because
+#     #             join with update doesn't work.
+#     with session.begin():
+#         host_filter = or_(and_(models.Instance.host == host,
+#                                models.Network.multi_host == true()),
+#                           models.Network.host == host)
+#         result = model_query(context, models.FixedIp.id,
+#                              base_model=models.FixedIp, read_deleted="no",
+#                              session=session).\
+#                 filter(models.FixedIp.allocated == false()).\
+#                 filter(models.FixedIp.updated_at < time).\
+#                 join((models.Network,
+#                       models.Network.id == models.FixedIp.network_id)).\
+#                 join((models.Instance,
+#                       models.Instance.uuid == models.FixedIp.instance_uuid)).\
+#                 filter(host_filter).\
+#                 all()
+#         fixed_ip_ids = [fip[0] for fip in result]
+#         if not fixed_ip_ids:
+#             return 0
+#         result = model_query(context, models.FixedIp, session=session).\
+#                              filter(models.FixedIp.id.in_(fixed_ip_ids)).\
+#                              update({'instance_uuid': None,
+#                                      'leased': False,
+#                                      'updated_at': timeutils.utcnow()},
+#                                     synchronize_session='fetch')
+#         return result
+
 @require_admin_context
 def fixed_ip_disassociate_all_by_timeout(context, host, time):
     session = get_session()
@@ -1265,18 +1298,11 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
                 join((models.Instance,
                       models.Instance.uuid == models.FixedIp.instance_uuid)).\
                 filter(host_filter).\
-                all()
-        fixed_ip_ids = [fip[0] for fip in result]
-        if not fixed_ip_ids:
-            return 0
-        result = model_query(context, models.FixedIp, session=session).\
-                             filter(models.FixedIp.id.in_(fixed_ip_ids)).\
-                             update({'instance_uuid': None,
+                update({'instance_uuid': None,
                                      'leased': False,
                                      'updated_at': timeutils.utcnow()},
                                     synchronize_session='fetch')
         return result
-
 
 @require_context
 def fixed_ip_get(context, id, get_network=False):
