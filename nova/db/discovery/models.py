@@ -153,8 +153,6 @@ class Certificate(BASE, NovaBase):
 
 @global_scope
 @secondary_index_decorator("uuid")
-@secondary_index_decorator("host")
-@secondary_index_decorator("node")
 class Instance(BASE, NovaBase):
     """Represents a guest VM."""
     __tablename__ = 'instances'
@@ -297,6 +295,7 @@ class Instance(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class InstanceInfoCache(BASE, NovaBase):
     """Represents a cache of information about an instance
     """
@@ -559,6 +558,7 @@ class Snapshot(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class BlockDeviceMapping(BASE, NovaBase):
     """Represents block device mapping that is defined by EC2."""
     __tablename__ = "block_device_mapping"
@@ -857,6 +857,7 @@ class VirtualInterface(BASE, NovaBase):
 
 # TODO(vish): can these both come from the same baseclass?
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class FixedIp(BASE, NovaBase):
     """Represents a fixed ip for an instance."""
     __tablename__ = 'fixed_ips'

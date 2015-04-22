@@ -1824,21 +1824,26 @@ def _instances_fill_metadata(context, instances,
                          combination of 'metadata' and 'system_metadata' or
                          None to take the default of both)
     """
+
+    def flatten(l):
+        return [item for sublist in l for item in sublist]
+
     uuids = [inst['uuid'] for inst in instances]
 
     if manual_joins is None:
         manual_joins = ['metadata', 'system_metadata']
 
     meta = collections.defaultdict(list)
-    if 'metadata' in manual_joins:
-        for row in _instance_metadata_get_multi(context, uuids,
-                                                use_slave=use_slave):
-            meta[row['instance_uuid']].append(row)
+    if 'system_metadata' in manual_joins:
+        for instance in instances:
+            for metadata in instance.metadata:
+                meta[instance.uuid].append(metadata)
 
     sys_meta = collections.defaultdict(list)
     if 'system_metadata' in manual_joins:
-        for row in _instance_system_metadata_get_multi(context, uuids):
-            sys_meta[row['instance_uuid']].append(row)
+        for instance in instances:
+            for system_metadata in instance.system_metadata:
+                sys_meta[instance.uuid].append(system_metadata)
 
     pcidevs = collections.defaultdict(list)
     if 'pci_devices' in manual_joins:
