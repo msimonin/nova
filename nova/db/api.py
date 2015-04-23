@@ -137,7 +137,7 @@ try:
 except:
     pass
 
-IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", db_backend is "sqlalchemy")
+IMPL = DbApiProxy(mysql_api, discovery_api, "nova.db.sqlalchemy.api", "nova.db.discovery.api", db_backend == "sqlalchemy")
 
 class DualImpl:
     def __init__(self):
