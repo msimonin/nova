@@ -153,6 +153,8 @@ class Certificate(BASE, NovaBase):
 
 @global_scope
 @secondary_index_decorator("uuid")
+@secondary_index_decorator("host")
+@secondary_index_decorator("node")
 class Instance(BASE, NovaBase):
     """Represents a guest VM."""
     __tablename__ = 'instances'
@@ -318,6 +320,7 @@ class InstanceInfoCache(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class InstanceExtra(BASE, NovaBase):
     __tablename__ = 'instance_extra'
     __table_args__ = (
@@ -858,6 +861,9 @@ class VirtualInterface(BASE, NovaBase):
 # TODO(vish): can these both come from the same baseclass?
 @global_scope
 @secondary_index_decorator("instance_uuid")
+@secondary_index_decorator("address")
+@secondary_index_decorator("host")
+@secondary_index_decorator("virtual_interface_id")
 class FixedIp(BASE, NovaBase):
     """Represents a fixed ip for an instance."""
     __tablename__ = 'fixed_ips'
