@@ -1291,6 +1291,7 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
         result = model_query(context, models.FixedIp.id,
                              base_model=models.FixedIp, read_deleted="no",
                              session=session).\
+                filter(models.FixedIp.leased == True).\
                 filter(models.FixedIp.allocated == false()).\
                 filter(models.FixedIp.updated_at < time).\
                 join((models.Network,

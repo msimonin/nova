@@ -155,6 +155,7 @@ class Certificate(BASE, NovaBase):
 @secondary_index_decorator("uuid")
 @secondary_index_decorator("host")
 @secondary_index_decorator("node")
+@secondary_index_decorator("deleted")
 class Instance(BASE, NovaBase):
     """Represents a guest VM."""
     __tablename__ = 'instances'
@@ -842,6 +843,7 @@ class Network(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class VirtualInterface(BASE, NovaBase):
     """Represents a virtual interface on an instance."""
     __tablename__ = 'virtual_interfaces'
@@ -863,6 +865,7 @@ class VirtualInterface(BASE, NovaBase):
 @secondary_index_decorator("instance_uuid")
 @secondary_index_decorator("address")
 @secondary_index_decorator("host")
+@secondary_index_decorator("leased")
 @secondary_index_decorator("virtual_interface_id")
 class FixedIp(BASE, NovaBase):
     """Represents a fixed ip for an instance."""
