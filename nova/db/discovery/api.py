@@ -71,10 +71,11 @@ try:
 except:
     pass
 
-# RIAK
+# Rome
 from lib.rome.core.orm.query import or_
 from lib.rome.core.orm.query import and_
-from lib.rome.core.orm.query import Query as RiakModelQuery
+from lib.rome.core.orm.query import Query as RomeQuery
+from lib.rome.core.session.session import Session as RomeSession
 from nova.db.discovery import models
 
 db_opts = [
@@ -113,36 +114,11 @@ def get_engine(use_slave=False):
 #     facade = _create_facade_lazily()
 #     return facade.get_session(use_slave=use_slave, **kwargs)
 
-class ControlledExecution():
-
-    def __enter__(self):
-        pass 
-    
-    def __exit__(self, type, value, traceback):
-        pass 
-
-class FakeSession():   
-
-    def add(self, *objs):
-        for obj in objs:
-            obj.save()
-
-    def query(self, *entities, **kwargs):
-        return RiakModelQuery(*entities, **kwargs)
-
-    def begin(self, *args, **kwargs):
-        return ControlledExecution()
-
-    def flush(self, *args, **kwargs):
-        pass
-
-
-
 def get_session(use_slave=False, **kwargs):
     # facade = _create_facade_lazily(use_slave)
     # return facade.get_session(**kwargs)
 
-    return FakeSession()
+    return RomeSession()
 
 
 _SHADOW_TABLE_PREFIX = 'shadow_'
@@ -236,7 +212,7 @@ def _retry_on_deadlock(f):
 def model_query(context, *args, **kwargs):
     # base_model = kwargs["base_model"]
     # models = args
-    return RiakModelQuery(*args, **kwargs)
+    return RomeQuery(*args, **kwargs)
 
 
 def exact_filter(query, model, filters, legal_keys):
@@ -431,7 +407,7 @@ def service_get(context, service_id, with_compute_node=False,
 def service_get_all(context, disabled=None):
     query = model_query(context, models.Service)
 
-    # TODO: commented following as it was a source of probleme with RIAK 
+    # TODO: commented following as it was a source of problems with Rome
     # implementation.
     # if disabled is not None:
     #     query = query.filter_by(disabled=disabled)
@@ -614,7 +590,7 @@ def compute_node_get_all(context, no_date_fields):
     from lib.rome.core.dataformat.converter import JsonConverter
     from lib.rome.core.dataformat.deconverter import JsonDeconverter
 
-    query = RiakModelQuery(models.ComputeNode)
+    query = RomeQuery(models.ComputeNode)
     compute_nodes = query.all()
 
     def novabase_to_dict(ref):
@@ -2062,8 +2038,8 @@ def instance_get_all_by_filters(context, filters, sort_key, sort_dir,
     #                        marker=marker,
     #                        sort_dir=sort_dir)
     # print("filters: %s" % (filters))
-    # query_prefix = RiakModelQuery(models.Instance).filter_dict(filters_)
-    # query_prefix = RiakModelQuery(models.Instance)
+    # query_prefix = RomeQuery(models.Instance).filter_dict(filters_)
+    # query_prefix = RomeQuery(models.Instance)
     return query_prefix.all()
     # return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
 
@@ -4669,7 +4645,7 @@ def flavor_get_all(context, inactive=False, filters=None,
     #                                        marker=marker_row,
     #                                        sort_dir=sort_dir)
 
-    query = RiakModelQuery(models.InstanceTypes)
+    query = RomeQuery(models.InstanceTypes)
     inst_types = query.all()
 
     return [_dict_with_extra_specs(i) for i in inst_types]
