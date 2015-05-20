@@ -5727,7 +5727,7 @@ class ComputeManager(manager.Manager):
                 import random
                 random.seed(0)
                 time_to_wait = random.randrange(0, CONF.sync_power_state_interval)
-                sleep(time_to_wait)
+                time.sleep(time_to_wait)
                 query_driver_power_state_and_sync()
             except Exception:
                 LOG.exception(_LE("Periodic sync_power_state task had an "
