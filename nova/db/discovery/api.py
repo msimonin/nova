@@ -1118,10 +1118,19 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     reserved -- should be a boolean value(True or False), exact value will be
     used to filter on the fixed ip address
     """
+    global dlm
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
-
     session = get_session()
+    lockname = "lock-fixed_ip_associate"
+    lock = None
+    try_to_lock = True
+    while try_to_lock:
+        lock = dlm.lock(lockname,1000)
+        if lock is not False:
+            try_to_lock = False
+        else:
+            time.sleep(0.05)
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
@@ -1145,6 +1154,9 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
             fixed_ip_ref.network_id = network_id
         fixed_ip_ref.instance_uuid = instance_uuid
         session.add(fixed_ip_ref)
+    # give 50ms to the session to commit changes; then the lock is released.
+    time.sleep(0.05)
+    dlm.unlock(lock)
     return fixed_ip_ref
 
 
@@ -1459,17 +1471,7 @@ dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
 
 @require_context
 def fixed_ip_update(context, address, values):
-    global dlm
     session = get_session()
-    lockname = "lock-fixed_ip_update"
-    lock = None
-    try_to_lock = True
-    while try_to_lock:
-        lock = dlm.lock(lockname,1000)
-        if lock is not False:
-            try_to_lock = False
-        else:
-            time.sleep(0.2)
     with session.begin():
 
         fo = open("/opt/logs/db_api.log", "a")
@@ -1479,9 +1481,6 @@ def fixed_ip_update(context, address, values):
 
         _fixed_ip_get_by_address(context, address, session=session).\
                                  update(values)
-    # give 20ms to the session to commit changes; then the lock is released.
-    time.sleep(0.02)
-    dlm.unlock(lock)
 
 
 def _fixed_ip_count_by_project(context, project_id, session=None):
