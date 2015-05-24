@@ -1452,10 +1452,24 @@ def fixed_ips_by_virtual_interface(context, vif_id):
 
     return result
 
+from redlock import Redlock as Redlock
+import time
+
+dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
 
 @require_context
 def fixed_ip_update(context, address, values):
+    global dlm
     session = get_session()
+    lockname = "lock-fixed_ip_update"
+    my_lock = None
+    try_to_lock = True
+    while try_to_lock:
+        my_lock = dlm.lock(lockname,1000)
+        if my_lock is not False:
+            try_to_lock = False
+        else:
+            time.sleep(20)
     with session.begin():
 
         fo = open("/opt/logs/db_api.log", "a")
@@ -1465,6 +1479,7 @@ def fixed_ip_update(context, address, values):
 
         _fixed_ip_get_by_address(context, address, session=session).\
                                  update(values)
+        dlm.unlock(my_lock)
 
 
 def _fixed_ip_count_by_project(context, project_id, session=None):
