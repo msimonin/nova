@@ -1462,11 +1462,11 @@ def fixed_ip_update(context, address, values):
     global dlm
     session = get_session()
     lockname = "lock-fixed_ip_update"
-    my_lock = None
+    lock = None
     try_to_lock = True
     while try_to_lock:
-        my_lock = dlm.lock(lockname,1000)
-        if my_lock is not False:
+        lock = dlm.lock(lockname,1000)
+        if lock is not False:
             try_to_lock = False
         else:
             time.sleep(0.2)
@@ -1479,7 +1479,9 @@ def fixed_ip_update(context, address, values):
 
         _fixed_ip_get_by_address(context, address, session=session).\
                                  update(values)
-        dlm.unlock(my_lock)
+    # give 20ms to the session to commit changes; then the lock is released.
+    time.sleep(0.02)
+    dlm.unlock(lock)
 
 
 def _fixed_ip_count_by_project(context, project_id, session=None):
