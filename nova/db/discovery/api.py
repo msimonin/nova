@@ -1469,7 +1469,7 @@ def fixed_ip_update(context, address, values):
         if my_lock is not False:
             try_to_lock = False
         else:
-            time.sleep(0.07)
+            time.sleep(0.2)
     with session.begin():
 
         fo = open("/opt/logs/db_api.log", "a")
