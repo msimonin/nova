@@ -1178,7 +1178,7 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
     fo = open("/opt/logs/db_api.log", "a")
-    fo.write("[NET] api.fixed_ip_associate_pool() (1-a): address: %s\n" % (address))
+    fo.write("[NET] api.fixed_ip_associate_pool() (1-a): network_id: %s\n" % (str(network_id)))
     session = get_session()
     lockname = "lock-fixed_ip_associate_pool"
     lock = None
