@@ -78,6 +78,7 @@ from lib.rome.core.orm.query import Query as RomeQuery
 from lib.rome.core.session.session import Session as RomeSession
 from nova.db.discovery import models
 from collections import namedtuple
+import random
 
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',
@@ -1215,14 +1216,15 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
-        fixed_ip_ref = model_query(context, models.FixedIp, session=session,
+        fixed_ips = model_query(context, models.FixedIp, session=session,
                                    read_deleted="no").\
                                filter(network_or_none).\
                                filter_by(reserved=False).\
                                filter_by(instance_uuid=None).\
                                filter_by(host=None).\
                                with_lockmode('update').\
-                               first()
+                               all()
+        fixed_ip_ref = random.choice(fixed_ips)
         # NOTE(vish): if with_lockmode isn't supported, as in sqlite,
         #             then this has concurrency issues
         if not fixed_ip_ref:
