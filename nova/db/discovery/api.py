@@ -1230,7 +1230,7 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
 
             if host:
                 fixed_ip_ref['host'] = host
-            acquire_lock("lock-fixed_ip_%s" % (address))
+            acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
             session.add(fixed_ip_ref)
     # give 100ms to the session to commit changes; then the lock is released.
     time.sleep(0.1)
