@@ -1121,10 +1121,13 @@ def acquire_lock(lockname):
     lock = None
     try_to_lock = True
     while try_to_lock:
-        lock = dlm.lock(lockname, 500) if lockname not in global_locks else False
+        lock = dlm.lock(lockname, 1000) if lockname not in global_locks else False
         if lock is not False:
-            return lock
             global_locks[lockname] = lock
+            fo = open("/opt/logs/db_api.log", "a")
+            fo.write("[NET] acquired lock: %s\n" % (lockname))
+            fo.close()
+            return lock
         else:
             time.sleep(0.05)
 
@@ -1134,6 +1137,9 @@ def release_lock(lockname):
         lock = global_locks[lockname]
         dlm.unlock(lock)
         del global_locks[lockname]
+        fo = open("/opt/logs/db_api.log", "a")
+        fo.write("[NET] released lock: %s\n" % (lockname))
+        fo.close()
         return True
     else:
         return False
@@ -1155,7 +1161,6 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
-    fixed_ip_lockname = "lock-fixed_ip_%s" % (address)
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
@@ -1177,11 +1182,12 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
                 fixed_ip_ref.network_id = network_id
             fixed_ip_ref.instance_uuid = instance_uuid
             session.add(fixed_ip_ref)
-            
     # give 50ms to the session to commit changes; then the lock is released.
     time.sleep(0.05)
-    release_lock(fixed_ip_lockname)
+    # fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
+    release_lock("lock-fixed_ip_%s" % (address))
     release_lock(lockname)
+    dlm.unlock(lock)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
                                                   network_uuid=network_id)
@@ -1222,6 +1228,7 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
         if not fixed_ip_ref:
             fixed_ip_ref_no_more = True
         else:
+            acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
             if fixed_ip_ref['network_id'] is None:
                 fixed_ip_ref['network'] = network_id
 
@@ -1230,7 +1237,6 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
 
             if host:
                 fixed_ip_ref['host'] = host
-            acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
             session.add(fixed_ip_ref)
     # give 100ms to the session to commit changes; then the lock is released.
     time.sleep(0.1)
