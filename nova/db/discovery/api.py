@@ -1110,6 +1110,33 @@ def dnsdomain_get_all(context):
 
 ###################
 
+Lock = namedtuple("Lock", ("validity", "resource", "key"))
+
+global_locks = {}
+
+def acquire_lock(lockname):
+    global dlm
+    global global_locks
+    lock = None
+    try_to_lock = True
+    while try_to_lock:
+        lock = dlm.lock(lockname,1000) if lockname not in global_locks else False
+        if lock is not False:
+            return lock
+            global_locks[lockname] = lock
+        else:
+            time.sleep(0.05)
+
+def release_lock(lockname):
+    global global_locks
+    if lockname in global_locks:
+        lock = global_locks[lockname]
+        dlm.unlock(lock)
+        del global_locks[lockname]
+        return True
+    else:
+        return False
+
 
 @require_admin_context
 def fixed_ip_associate(context, address, instance_uuid, network_id=None,
@@ -1118,22 +1145,13 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     reserved -- should be a boolean value(True or False), exact value will be
     used to filter on the fixed ip address
     """
-    global dlm
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
     fo = open("/opt/logs/db_api.log", "a")
     fo.write("[NET] api.fixed_ip_associate() (1-a): address: %s\n" % (address))
     session = get_session()
     lockname = "lock-fixed_ip_associate"
-    lock = None
-    try_to_lock = True
-    while try_to_lock:
-        lock = dlm.lock(lockname,1000)
-        fo.write("[NET] api.fixed_ip_associate() (1-b): got the lock")
-        if lock is not False:
-            try_to_lock = False
-        else:
-            time.sleep(0.05)
+    acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
     with session.begin():
@@ -1157,8 +1175,11 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
                 fixed_ip_ref.network_id = network_id
             fixed_ip_ref.instance_uuid = instance_uuid
             session.add(fixed_ip_ref)
+            release_lock("lock-fixed_ip_%s" % (address))
     # give 50ms to the session to commit changes; then the lock is released.
     time.sleep(0.05)
+    release_lock(lockname)
+    fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
     dlm.unlock(lock)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
@@ -1174,23 +1195,13 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
 @require_admin_context
 def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                             host=None):
-    global dlm
     if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
     fo = open("/opt/logs/db_api.log", "a")
     fo.write("[NET] api.fixed_ip_associate_pool() (1-a): network_id: %s\n" % (str(network_id)))
     session = get_session()
     lockname = "lock-fixed_ip_associate_pool"
-    lock = None
-    try_to_lock = True
-    while try_to_lock:
-        lock = dlm.lock(lockname,1000)
-        fo.write("[NET] api.fixed_ip_associate_pool() (1-b): trying to lock %s\n" % (lockname))
-        if lock is not False:
-            fo.write("[NET] api.fixed_ip_associate_pool() (1-b): got the lock %s\n" % (lockname))
-            try_to_lock = False
-        else:
-            time.sleep(0.05)
+    acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
     fixed_ip_ref_no_more = False
@@ -1218,10 +1229,11 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
 
             if host:
                 fixed_ip_ref['host'] = host
+            acquire_lock("lock-fixed_ip_%s" % (address))
             session.add(fixed_ip_ref)
     # give 100ms to the session to commit changes; then the lock is released.
     time.sleep(0.1)
-    dlm.unlock(lock)
+    release_lock(lockname)
     if fixed_ip_ref_no_more:
             raise exception.NoMoreFixedIps(net=network_id)
     fo.write("[NET] api.fixed_ip_associate_pool() (1-c): return: %s\n" % (fixed_ip_ref))
