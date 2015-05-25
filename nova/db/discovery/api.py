@@ -1185,8 +1185,9 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
     try_to_lock = True
     while try_to_lock:
         lock = dlm.lock(lockname,1000)
-        fo.write("[NET] api.fixed_ip_associate_pool() (1-b): got the lock")
+        fo.write("[NET] api.fixed_ip_associate_pool() (1-b): trying to lock %s\n" % (lockname))
         if lock is not False:
+            fo.write("[NET] api.fixed_ip_associate_pool() (1-b): got the lock %s\n" % (lockname))
             try_to_lock = False
         else:
             time.sleep(0.05)
@@ -1218,8 +1219,8 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
             if host:
                 fixed_ip_ref['host'] = host
             session.add(fixed_ip_ref)
-    # give 50ms to the session to commit changes; then the lock is released.
-    time.sleep(0.05)
+    # give 100ms to the session to commit changes; then the lock is released.
+    time.sleep(0.1)
     dlm.unlock(lock)
     if fixed_ip_ref_no_more:
             raise exception.NoMoreFixedIps(net=network_id)
