@@ -1121,7 +1121,7 @@ def acquire_lock(lockname):
     lock = None
     try_to_lock = True
     while try_to_lock:
-        lock = dlm.lock(lockname,1000) if lockname not in global_locks else False
+        lock = dlm.lock(lockname, 500) if lockname not in global_locks else False
         if lock is not False:
             return lock
             global_locks[lockname] = lock
@@ -1155,6 +1155,7 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
+    fixed_ip_lockname = "lock-fixed_ip_%s" % (address)
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
@@ -1176,12 +1177,11 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
                 fixed_ip_ref.network_id = network_id
             fixed_ip_ref.instance_uuid = instance_uuid
             session.add(fixed_ip_ref)
-            release_lock("lock-fixed_ip_%s" % (address))
+            
     # give 50ms to the session to commit changes; then the lock is released.
     time.sleep(0.05)
+    release_lock(fixed_ip_lockname)
     release_lock(lockname)
-    fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
-    dlm.unlock(lock)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
                                                   network_uuid=network_id)
