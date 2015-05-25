@@ -1130,7 +1130,7 @@ def acquire_lock(lockname):
             fo.close()
             return lock
         else:
-            time.sleep(0.05)
+            time.sleep(0.040)
 
 def release_lock(lockname):
     global global_locks
@@ -1184,7 +1184,7 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
             fixed_ip_ref.instance_uuid = instance_uuid
             session.add(fixed_ip_ref)
     # give 50ms to the session to commit changes; then the lock is released.
-    time.sleep(0.05)
+    time.sleep(0.030)
     # fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
     release_lock("lock-fixed_ip_%s" % (address))
     release_lock(lockname)
@@ -1241,7 +1241,7 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                 fixed_ip_ref['host'] = host
             session.add(fixed_ip_ref)
     # give 100ms to the session to commit changes; then the lock is released.
-    time.sleep(0.1)
+    time.sleep(0.030)
     release_lock(lockname)
     if fixed_ip_ref_no_more:
             raise exception.NoMoreFixedIps(net=network_id)
