@@ -1174,10 +1174,25 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
 @require_admin_context
 def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                             host=None):
-    if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
+    global dlm
+    if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
-
+    fo = open("/opt/logs/db_api.log", "a")
+    fo.write("[NET] api.fixed_ip_associate_pool() (1-a): address: %s\n" % (address))
     session = get_session()
+    lockname = "lock-fixed_ip_associate_pool"
+    lock = None
+    try_to_lock = True
+    while try_to_lock:
+        lock = dlm.lock(lockname,1000)
+        fo.write("[NET] api.fixed_ip_associate_pool() (1-b): got the lock")
+        if lock is not False:
+            try_to_lock = False
+        else:
+            time.sleep(0.05)
+    fixed_ip_ref_is_none = False
+    fixed_ip_ref_instance_uuid_is_not_none = False
+    fixed_ip_ref_no_more = False
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
@@ -1192,17 +1207,24 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
         # NOTE(vish): if with_lockmode isn't supported, as in sqlite,
         #             then this has concurrency issues
         if not fixed_ip_ref:
+            fixed_ip_ref_no_more = True
+        else:
+            if fixed_ip_ref['network_id'] is None:
+                fixed_ip_ref['network'] = network_id
+
+            if instance_uuid:
+                fixed_ip_ref['instance_uuid'] = instance_uuid
+
+            if host:
+                fixed_ip_ref['host'] = host
+            session.add(fixed_ip_ref)
+    # give 50ms to the session to commit changes; then the lock is released.
+    time.sleep(0.05)
+    dlm.unlock(lock)
+    if fixed_ip_ref_no_more:
             raise exception.NoMoreFixedIps(net=network_id)
-
-        if fixed_ip_ref['network_id'] is None:
-            fixed_ip_ref['network'] = network_id
-
-        if instance_uuid:
-            fixed_ip_ref['instance_uuid'] = instance_uuid
-
-        if host:
-            fixed_ip_ref['host'] = host
-        session.add(fixed_ip_ref)
+    fo.write("[NET] api.fixed_ip_associate_pool() (1-c): return: %s\n" % (fixed_ip_ref))
+    fo.close()      
     return fixed_ip_ref
 
 
