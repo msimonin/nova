@@ -1121,16 +1121,21 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     global dlm
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
+    fo = open("/opt/logs/db_api.log", "a")
+    fo.write("[NET] api.fixed_ip_associate() (1-a): address: %s\n" % (address))
     session = get_session()
     lockname = "lock-fixed_ip_associate"
     lock = None
     try_to_lock = True
     while try_to_lock:
         lock = dlm.lock(lockname,1000)
+        fo.write("[NET] api.fixed_ip_associate() (1-b): got the lock")
         if lock is not False:
             try_to_lock = False
         else:
             time.sleep(0.05)
+    fixed_ip_ref_is_none = False
+    fixed_ip_ref_instance_uuid_is_not_none = False
     with session.begin():
         network_or_none = or_(models.FixedIp.network_id == network_id,
                               models.FixedIp.network_id == null())
@@ -1144,19 +1149,25 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
         # NOTE(vish): if with_lockmode isn't supported, as in sqlite,
         #             then this has concurrency issues
         if fixed_ip_ref is None:
-            raise exception.FixedIpNotFoundForNetwork(address=address,
-                                            network_uuid=network_id)
-        if fixed_ip_ref.instance_uuid:
-            raise exception.FixedIpAlreadyInUse(address=address,
-                                                instance_uuid=instance_uuid)
-
-        if not fixed_ip_ref.network_id:
-            fixed_ip_ref.network_id = network_id
-        fixed_ip_ref.instance_uuid = instance_uuid
-        session.add(fixed_ip_ref)
+            fixed_ip_ref_is_none = True
+        elif fixed_ip_ref.instance_uuid:
+            fixed_ip_ref_instance_uuid_is_not_none = True
+        else:
+            if not fixed_ip_ref.network_id:
+                fixed_ip_ref.network_id = network_id
+            fixed_ip_ref.instance_uuid = instance_uuid
+            session.add(fixed_ip_ref)
     # give 50ms to the session to commit changes; then the lock is released.
     time.sleep(0.05)
     dlm.unlock(lock)
+    if fixed_ip_ref_is_none:
+        raise exception.FixedIpNotFoundForNetwork(address=address,
+                                                  network_uuid=network_id)
+    if fixed_ip_ref_instance_uuid_is_not_none:
+        raise exception.FixedIpAlreadyInUse(address=address,
+                                            instance_uuid=instance_uuid)
+    fo.write("[NET] api.fixed_ip_associate() (1-c): return: %s\n" % (fixed_ip_ref))
+    fo.close()
     return fixed_ip_ref
 
 
