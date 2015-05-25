@@ -77,6 +77,7 @@ from lib.rome.core.orm.query import and_
 from lib.rome.core.orm.query import Query as RomeQuery
 from lib.rome.core.session.session import Session as RomeSession
 from nova.db.discovery import models
+from collections import namedtuple
 
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',
