@@ -1132,6 +1132,7 @@ def acquire_lock(lockname):
         else:
             time.sleep(0.040)
 
+
 def release_lock(lockname):
     global global_locks
     if lockname in global_locks:
@@ -1144,6 +1145,57 @@ def release_lock(lockname):
         return True
     else:
         return False
+
+
+@require_admin_context
+def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
+                            host=None):
+    if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
+        raise exception.InvalidUUID(uuid=instance_uuid)
+    fo = open("/opt/logs/db_api.log", "a")
+    fo.write("[NET] api.fixed_ip_associate_pool() (1-a): network_id: %s\n" % (str(network_id)))
+    session = get_session()
+    lockname = "lock-fixed_ip_associate_pool"
+    acquire_lock(lockname)
+    fixed_ip_ref_is_none = False
+    fixed_ip_ref_instance_uuid_is_not_none = False
+    fixed_ip_ref_no_more = False
+    with session.begin():
+        network_or_none = or_(models.FixedIp.network_id == network_id,
+                              models.FixedIp.network_id == null())
+        fixed_ips = model_query(context, models.FixedIp, session=session,
+                                   read_deleted="no").\
+                               filter(network_or_none).\
+                               filter_by(reserved=False).\
+                               filter_by(instance_uuid=None).\
+                               filter_by(host=None).\
+                               with_lockmode('update').\
+                               all()
+        fixed_ip_ref = random.choice(fixed_ips)
+        # NOTE(vish): if with_lockmode isn't supported, as in sqlite,
+        #             then this has concurrency issues
+        if not fixed_ip_ref:
+            fixed_ip_ref_no_more = True
+        else:
+            fixed_ip_lockname = "lock-fixed_ip_%s" % (fixed_ip_ref.address)
+            acquire_lock(fixed_ip_lockname)
+            if fixed_ip_ref['network_id'] is None:
+                fixed_ip_ref['network'] = network_id
+
+            if instance_uuid:
+                fixed_ip_ref['instance_uuid'] = instance_uuid
+
+            if host:
+                fixed_ip_ref['host'] = host
+            session.add(fixed_ip_ref)
+    # give 100ms to the session to commit changes; then the lock is released.
+    time.sleep(0.030)
+    release_lock(lockname)
+    if fixed_ip_ref_no_more:
+            raise exception.NoMoreFixedIps(net=network_id)
+    fo.write("[NET] api.fixed_ip_associate_pool() (1-c): return: %s\n" % (fixed_ip_ref))
+    fo.close()      
+    return fixed_ip_ref
 
 
 @require_admin_context
@@ -1185,10 +1237,9 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
             session.add(fixed_ip_ref)
     # give 50ms to the session to commit changes; then the lock is released.
     time.sleep(0.030)
-    # fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
-    release_lock("lock-fixed_ip_%s" % (address))
+    fixed_ip_lockname = "lock-fixed_ip_%s" % (address)
+    release_lock(fixed_ip_lockname)
     release_lock(lockname)
-    dlm.unlock(lock)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
                                                   network_uuid=network_id)
@@ -1197,56 +1248,6 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
                                             instance_uuid=instance_uuid)
     fo.write("[NET] api.fixed_ip_associate() (1-c): return: %s\n" % (fixed_ip_ref))
     fo.close()
-    return fixed_ip_ref
-
-
-@require_admin_context
-def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
-                            host=None):
-    if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
-        raise exception.InvalidUUID(uuid=instance_uuid)
-    fo = open("/opt/logs/db_api.log", "a")
-    fo.write("[NET] api.fixed_ip_associate_pool() (1-a): network_id: %s\n" % (str(network_id)))
-    session = get_session()
-    lockname = "lock-fixed_ip_associate_pool"
-    acquire_lock(lockname)
-    fixed_ip_ref_is_none = False
-    fixed_ip_ref_instance_uuid_is_not_none = False
-    fixed_ip_ref_no_more = False
-    with session.begin():
-        network_or_none = or_(models.FixedIp.network_id == network_id,
-                              models.FixedIp.network_id == null())
-        fixed_ips = model_query(context, models.FixedIp, session=session,
-                                   read_deleted="no").\
-                               filter(network_or_none).\
-                               filter_by(reserved=False).\
-                               filter_by(instance_uuid=None).\
-                               filter_by(host=None).\
-                               with_lockmode('update').\
-                               all()
-        fixed_ip_ref = random.choice(fixed_ips)
-        # NOTE(vish): if with_lockmode isn't supported, as in sqlite,
-        #             then this has concurrency issues
-        if not fixed_ip_ref:
-            fixed_ip_ref_no_more = True
-        else:
-            acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
-            if fixed_ip_ref['network_id'] is None:
-                fixed_ip_ref['network'] = network_id
-
-            if instance_uuid:
-                fixed_ip_ref['instance_uuid'] = instance_uuid
-
-            if host:
-                fixed_ip_ref['host'] = host
-            session.add(fixed_ip_ref)
-    # give 100ms to the session to commit changes; then the lock is released.
-    time.sleep(0.030)
-    release_lock(lockname)
-    if fixed_ip_ref_no_more:
-            raise exception.NoMoreFixedIps(net=network_id)
-    fo.write("[NET] api.fixed_ip_associate_pool() (1-c): return: %s\n" % (fixed_ip_ref))
-    fo.close()      
     return fixed_ip_ref
 
 
