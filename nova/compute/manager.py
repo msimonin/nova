@@ -2182,15 +2182,19 @@ class ComputeManager(manager.Manager):
         success = False
         while not success:
           try:
-              instance.save(expected_task_state=task_states.SPAWNING)
-              success = True
-          except (exception.InstanceNotFound,
-                  exception.UnexpectedDeletingTaskStateError) as e:
-            if number_retry >= 5:
-              with excutils.save_and_reraise_exception():
-                  self._notify_about_instance_usage(context, instance,
-                      'create.end', fault=e)
-            num_retry += 1
+            try:
+                instance.save(expected_task_state=task_states.SPAWNING)
+                success = True
+            except (exception.InstanceNotFound,
+                    exception.UnexpectedDeletingTaskStateError) as e:
+              if number_retry >= 5:
+                with excutils.save_and_reraise_exception():
+                    self._notify_about_instance_usage(context, instance,
+                        'create.end', fault=e)
+          except:
+            if num_retry >= 5:
+                raise
+              num_retry += 1
 
         self._notify_about_instance_usage(context, instance, 'create.end',
                 extra_usage_info={'message': _('Success')},
