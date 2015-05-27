@@ -151,7 +151,7 @@ class RedisLock(object):
                     fo.close()
                     return True
                 else:
-                    time.sleep(0.015)
+                    time.sleep(0.010)
 
     def __enter__(self):
         self.acquire()
