@@ -129,6 +129,61 @@ class _FileLock(object):
     def unlock(self):
         raise NotImplementedError()
 
+import redis
+from redlock import Redlock as Redlock
+
+class RedisLock(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.lock = None
+        self.dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
+
+    def acquire(self):
+        if not self.exists():
+            lockname = self.name
+            while True:
+                self.lock = self.trylock()
+                if self.lock is not False:
+                    LOG.debug('Got redis lock "%s"', self.fname)
+                    fo = open("/opt/logs/db_api.log", "a")
+                    fo.write("[LOCK_UTILS] acquired lock: %s\n" % (self.name))
+                    fo.close()
+                    return True
+                else:
+                    time.sleep(0.015)
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def release(self):
+        if self.lock:
+            self.unlock()
+            self.lock = None
+            LOG.debug('Released redis lock "%s"', self.name)
+            fo = open("/opt/logs/db_api.log", "a")
+            fo.write("[LOCK_UTILS] released lock: %s\n" % (self.name))
+            fo.close()
+            return True
+        else:
+            return False
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
+    def exists(self):
+        for server in self.dlm.servers:
+            if server.get(self.name):
+                return True
+        return False
+
+    def trylock(self):
+        return self.dlm.lock(self.name, 1000)
+
+    def unlock(self):
+        if self.lock is not None and self.lock is not False:
+            return self.dlm.unlock(self.lock)
 
 class _WindowsLock(_FileLock):
     def trylock(self):
@@ -146,12 +201,14 @@ class _FcntlLock(_FileLock):
         fcntl.lockf(self.lockfile, fcntl.LOCK_UN)
 
 
-if os.name == 'nt':
-    import msvcrt
-    InterProcessLock = _WindowsLock
-else:
-    import fcntl
-    InterProcessLock = _FcntlLock
+# if os.name == 'nt':
+#     import msvcrt
+#     InterProcessLock = _WindowsLock
+# else:
+#     import fcntl
+#     InterProcessLock = _FcntlLock
+
+InterProcessLock = RedisLock
 
 _semaphores = weakref.WeakValueDictionary()
 _semaphores_lock = threading.Lock()
