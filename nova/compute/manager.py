@@ -2193,8 +2193,8 @@ class ComputeManager(manager.Manager):
                         'create.end', fault=e)
           except:
             if num_retry >= 5:
-                raise
-              num_retry += 1
+              raise
+            num_retry += 1
 
         self._notify_about_instance_usage(context, instance, 'create.end',
                 extra_usage_info={'message': _('Success')},
