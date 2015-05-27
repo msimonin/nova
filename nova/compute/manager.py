@@ -2099,28 +2099,19 @@ class ComputeManager(manager.Manager):
                 # the host is set on the instance.
                 self._validate_instance_group_policy(context, instance,
                         filter_properties)
-                num_retry = 0
-                success = False
-                while not success:
-                  try:               
-                    with self._build_resources(context, instance,
-                            requested_networks, security_groups, image,
-                            block_device_mapping) as resources:
-                        instance.vm_state = vm_states.BUILDING
-                        instance.task_state = task_states.SPAWNING
-                        instance.save(expected_task_state=
-                                task_states.BLOCK_DEVICE_MAPPING)
-                        block_device_info = resources['block_device_info']
-                        network_info = resources['network_info']
-                        self.driver.spawn(context, instance, image,
-                                          injected_files, admin_password,
-                                          network_info=network_info,
-                                          block_device_info=block_device_info)
-                        success = True
-                  except:
-                    if num_retry >= 5:
-                      raise
-                    num_retry += 1
+                with self._build_resources(context, instance,
+                        requested_networks, security_groups, image,
+                        block_device_mapping) as resources:
+                    instance.vm_state = vm_states.BUILDING
+                    instance.task_state = task_states.SPAWNING
+                    instance.save(expected_task_state=
+                            task_states.BLOCK_DEVICE_MAPPING)
+                    block_device_info = resources['block_device_info']
+                    network_info = resources['network_info']
+                    self.driver.spawn(context, instance, image,
+                                      injected_files, admin_password,
+                                      network_info=network_info,
+                                      block_device_info=block_device_info)
         except (exception.InstanceNotFound,
                 exception.UnexpectedDeletingTaskStateError) as e:
             with excutils.save_and_reraise_exception():
@@ -2178,23 +2169,13 @@ class ComputeManager(manager.Manager):
         instance.task_state = None
         instance.launched_at = timeutils.utcnow()
 
-        num_retry = 0
-        success = False
-        while not success:
-          try:
-            try:
-                instance.save(expected_task_state=task_states.SPAWNING)
-                success = True
-            except (exception.InstanceNotFound,
-                    exception.UnexpectedDeletingTaskStateError) as e:
-              if number_retry >= 5:
-                with excutils.save_and_reraise_exception():
-                    self._notify_about_instance_usage(context, instance,
-                        'create.end', fault=e)
-          except:
-            if num_retry >= 5:
-              raise
-            num_retry += 1
+        try:
+            instance.save(expected_task_state=task_states.SPAWNING)
+        except (exception.InstanceNotFound,
+                exception.UnexpectedDeletingTaskStateError) as e:
+            with excutils.save_and_reraise_exception():
+                self._notify_about_instance_usage(context, instance,
+                    'create.end', fault=e)
 
         self._notify_about_instance_usage(context, instance, 'create.end',
                 extra_usage_info={'message': _('Success')},
