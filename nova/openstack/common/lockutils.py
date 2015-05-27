@@ -145,7 +145,7 @@ class RedisLock(object):
             while True:
                 self.lock = self.trylock()
                 if self.lock is not False:
-                    LOG.debug('Got redis lock "%s"', self.fname)
+                    LOG.debug('Got redis lock "%s"', self.name)
                     fo = open("/opt/logs/db_api.log", "a")
                     fo.write("[LOCK_UTILS] acquired lock: %s\n" % (self.name))
                     fo.close()
