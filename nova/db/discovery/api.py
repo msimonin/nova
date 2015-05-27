@@ -2463,6 +2463,11 @@ def _instance_update(context, instance_uuid, values, copy_old_instance=False,
         instance_ref = _instance_get_by_uuid(context, instance_uuid,
                                              session=session,
                                              columns_to_join=columns_to_join)
+        # The instance_ref may be a lazyRef:
+        #    => the following line forces to work with an instance object.
+        if hasattr(instance_ref, "get_complex_ref"):
+            instance_ref = instance_ref.get_complex_ref()
+
         if "expected_task_state" in values:
             # it is not a db column so always pop out
             expected = values.pop("expected_task_state")
