@@ -179,7 +179,7 @@ class RedisLock(object):
         return False
 
     def trylock(self):
-        return self.dlm.lock(self.name, 1000)
+        return self.dlm.lock(self.name, 200)
 
     def unlock(self):
         if self.lock is not None and self.lock is not False:
@@ -201,14 +201,14 @@ class _FcntlLock(_FileLock):
         fcntl.lockf(self.lockfile, fcntl.LOCK_UN)
 
 
-# if os.name == 'nt':
-#     import msvcrt
-#     InterProcessLock = _WindowsLock
-# else:
-#     import fcntl
-#     InterProcessLock = _FcntlLock
+if os.name == 'nt':
+    import msvcrt
+    InterProcessLock = _WindowsLock
+else:
+    import fcntl
+    InterProcessLock = _FcntlLock
 
-InterProcessLock = RedisLock
+# InterProcessLock = RedisLock
 
 _semaphores = weakref.WeakValueDictionary()
 _semaphores_lock = threading.Lock()
