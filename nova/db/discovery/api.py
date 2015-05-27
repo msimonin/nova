@@ -1122,7 +1122,7 @@ def acquire_lock(lockname):
     lock = None
     try_to_lock = True
     while try_to_lock:
-        lock = dlm.lock(lockname, 200) if lockname not in global_locks else False
+        lock = dlm.lock(lockname, 100) if lockname not in global_locks else False
         if lock is not False:
             global_locks[lockname] = lock
             fo = open("/opt/logs/db_api.log", "a")
