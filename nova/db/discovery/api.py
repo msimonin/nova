@@ -1335,7 +1335,7 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
         host_filter = or_(and_(models.Instance.host == host,
                                models.Network.multi_host == true()),
                           models.Network.host == host)
-        result = model_query(context, models.FixedIp.id,
+        result = model_query(context, models.FixedIp,
                              base_model=models.FixedIp, read_deleted="no",
                              session=session).\
                 filter(models.FixedIp.leased == True).\
@@ -1350,7 +1350,8 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
                                      'leased': False,
                                      'updated_at': timeutils.utcnow()},
                                     synchronize_session='fetch')
-        return result
+        results_ids = map(lambda x: x.id, result)
+        return results_ids
 
 @require_context
 def fixed_ip_get(context, id, get_network=False):

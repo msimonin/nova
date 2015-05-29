@@ -863,6 +863,7 @@ class VirtualInterface(BASE, NovaBase):
 # TODO(vish): can these both come from the same baseclass?
 @global_scope
 @secondary_index_decorator("instance_uuid")
+@secondary_index_decorator("network_id")
 @secondary_index_decorator("address")
 @secondary_index_decorator("host")
 @secondary_index_decorator("leased")
