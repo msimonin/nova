@@ -1188,7 +1188,6 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     # fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
     release_lock("lock-fixed_ip_%s" % (address))
     release_lock(lockname)
-    dlm.unlock(lock)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
                                                   network_uuid=network_id)
