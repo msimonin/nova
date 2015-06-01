@@ -1394,7 +1394,7 @@ def _fixed_ip_get_by_address(context, address, session=None,
             result = model_query(context, models.FixedIp, session=session)
             for column in columns_to_join:
                 result = result.options(joinedload_all(column))
-            result = result.filter_by(address=address).first()
+            result = result.filter(models.FixedIp.address==address).first()
             if not result:
                 raise exception.FixedIpNotFoundForAddress(address=address)
         except db_exc.DBError:
@@ -1464,7 +1464,7 @@ def fixed_ip_get_by_instance(context, instance_uuid):
                    models.FixedIp.virtual_interface_id,
                    models.VirtualInterface.deleted == 0)
     result = model_query(context, models.FixedIp, read_deleted="no").\
-                 filter_by(instance_uuid=instance_uuid).\
+                 filter(models.FixedIp.instance_uuid==instance_uuid).\
                  outerjoin(models.VirtualInterface, vif_and).\
                  options(contains_eager("virtual_interface")).\
                  options(joinedload('network')).\
@@ -2614,7 +2614,7 @@ def instance_extra_update_by_uuid(context, instance_uuid, values):
 
 def _instance_extra_get_by_instance_uuid_query(context, instance_uuid):
     return (model_query(context, models.InstanceExtra)
-                         .filter_by(instance_uuid=instance_uuid))
+                         .filter(models.InstanceExtra.instance_uuid==instance_uuid))
 
 
 def instance_extra_get_by_instance_uuid(context, instance_uuid,
