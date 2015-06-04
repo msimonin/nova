@@ -557,9 +557,11 @@ def service_create(context, values):
         if service_topic is None:
             service_ref.save()
         else:
+            release_lock(lockname)
             raise exception.ServiceTopicExists(host=values.get('host'),
                 topic=values.get('topic'))
     else:
+        release_lock(lockname)
         raise exception.ServiceBinaryExists(host=values.get('host'),
             binary=values.get('binary'))
     # if not CONF.enable_new_services:
