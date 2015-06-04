@@ -541,6 +541,7 @@ def service_create(context, values):
 
     service_ref = models.Service()
     service_ref.update(values)
+    service_ref.save()
 
     if not CONF.enable_new_services:
         service_ref.disabled = True
@@ -554,16 +555,16 @@ def service_create(context, values):
                     filter_by(host=values.get('host')).\
                     filter_by(topic=values.get('topic')).\
                     all()
-        if service_topic is None:
-            service_ref.save()
-        else:
-            release_lock(lockname)
-            raise exception.ServiceTopicExists(host=values.get('host'),
-                topic=values.get('topic'))
-    else:
-        release_lock(lockname)
-        raise exception.ServiceBinaryExists(host=values.get('host'),
-            binary=values.get('binary'))
+        # if service_topic is None:
+        #     service_ref.save()
+        # else:
+        #     release_lock(lockname)
+        #     raise exception.ServiceTopicExists(host=values.get('host'),
+        #         topic=values.get('topic'))
+    # else:
+    #     release_lock(lockname)
+    #     raise exception.ServiceBinaryExists(host=values.get('host'),
+    #         binary=values.get('binary'))
     # if not CONF.enable_new_services:
     #     service_ref.disabled = True
     # try:
