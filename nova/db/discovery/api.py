@@ -122,6 +122,39 @@ def get_session(use_slave=False, **kwargs):
 
     return RomeSession()
 
+Lock = namedtuple("Lock", ("validity", "resource", "key"))
+
+global_locks = {}
+
+def acquire_lock(lockname):
+    global dlm
+    global global_locks
+    lock = None
+    try_to_lock = True
+    while try_to_lock:
+        lock = dlm.lock(lockname, 1000) if lockname not in global_locks else False
+        if lock is not False:
+            global_locks[lockname] = lock
+            fo = open("/opt/logs/db_api.log", "a")
+            fo.write("[NET] acquired lock: %s\n" % (lockname))
+            fo.close()
+            return lock
+        else:
+            time.sleep(0.05)
+
+def release_lock(lockname):
+    global global_locks
+    if lockname in global_locks:
+        lock = global_locks[lockname]
+        dlm.unlock(lock)
+        del global_locks[lockname]
+        fo = open("/opt/logs/db_api.log", "a")
+        fo.write("[NET] released lock: %s\n" % (lockname))
+        fo.close()
+        return True
+    else:
+        return False
+
 
 _SHADOW_TABLE_PREFIX = 'shadow_'
 _DEFAULT_QUOTA_NAME = 'default'
@@ -469,38 +502,78 @@ def service_get_by_args(context, host, binary):
 
 from filelock import FileLock
 
+# def service_create(context, values):
+
+#     with FileLock("/tmp/service_creation_lock_file.txt"):
+#         service_binary = model_query(context, models.Service).\
+#                         filter_by(host=values.get('host')).\
+#                         filter_by(binary=values.get('binary')).\
+#                         all()
+#         print(" * service_binary (%s) => %s" % (values, service_binary))
+#         if len(service_binary) == 0:
+#             service_topic = model_query(context, models.Service).\
+#                         filter_by(host=values.get('host')).\
+#                         filter_by(topic=values.get('topic')).\
+#                         all()
+#             print(" * service_topic (%s) => %s" % (values, service_topic))
+#             if len(service_topic) == 0:
+#                 service_ref = models.Service()
+#                 service_ref.update(values, do_save=False)
+#                 if not CONF.enable_new_services:
+#                     service_ref.disabled = True
+#                 service_ref.save()
+#                 print("released lock from %s" % (values))
+#             else:
+#                 print("released lock from %s" % (values))
+#                 raise exception.ServiceTopicExists(host=values.get('host'),
+#                     topic=values.get('topic'))
+#         else:
+#             print("released lock from %s" % (values))
+#             raise exception.ServiceBinaryExists(host=values.get('host'),
+#                 binary=values.get('binary'))        
+#         return service_ref
+
+@require_admin_context
 def service_create(context, values):
 
-    with FileLock("/tmp/service_creation_lock_file.txt"):
-        service_binary = model_query(context, models.Service).\
-                        filter_by(host=values.get('host')).\
-                        filter_by(binary=values.get('binary')).\
-                        all()
-        print(" * service_binary (%s) => %s" % (values, service_binary))
-        if len(service_binary) == 0:
-            service_topic = model_query(context, models.Service).\
-                        filter_by(host=values.get('host')).\
-                        filter_by(topic=values.get('topic')).\
-                        all()
-            print(" * service_topic (%s) => %s" % (values, service_topic))
-            if len(service_topic) == 0:
-                service_ref = models.Service()
-                service_ref.update(values, do_save=False)
-                if not CONF.enable_new_services:
-                    service_ref.disabled = True
-                service_ref.save()
-                print("released lock from %s" % (values))
-            else:
-                print("released lock from %s" % (values))
-                raise exception.ServiceTopicExists(host=values.get('host'),
-                    topic=values.get('topic'))
-        else:
-            print("released lock from %s" % (values))
-            raise exception.ServiceBinaryExists(host=values.get('host'),
-                binary=values.get('binary'))
+    lockname = "lock_service_create"
+    acquire_lock(lockname)
 
-        
-        return service_ref
+    service_ref = models.Service()
+    service_ref.update(values, do_save=False)
+
+    if not CONF.enable_new_services:
+        service_ref.disabled = True
+
+    service_binary = model_query(context, models.Service).\
+                    filter_by(host=values.get('host')).\
+                    filter_by(binary=values.get('binary')).\
+                    all()
+    if service_binary is None:
+        service_topic = model_query(context, models.Service).\
+                    filter_by(host=values.get('host')).\
+                    filter_by(topic=values.get('topic')).\
+                    all()
+        if service_topic is None:
+            service_ref.save()
+        else:
+            raise exception.ServiceTopicExists(host=values.get('host'),
+                topic=values.get('topic'))
+    else:
+        raise exception.ServiceBinaryExists(host=values.get('host'),
+            binary=values.get('binary'))
+    # if not CONF.enable_new_services:
+    #     service_ref.disabled = True
+    # try:
+    #     service_ref.save()
+    # except db_exc.DBDuplicateEntry as e:
+    #     if 'binary' in e.columns:
+    #         raise exception.ServiceBinaryExists(host=values.get('host'),
+    #                     binary=values.get('binary'))
+    #     raise exception.ServiceTopicExists(host=values.get('host'),
+    #                     topic=values.get('topic'))
+    release_lock(lockname)
+    return service_ref
 
 
 @require_admin_context
@@ -1111,39 +1184,6 @@ def dnsdomain_get_all(context):
 
 
 ###################
-
-Lock = namedtuple("Lock", ("validity", "resource", "key"))
-
-global_locks = {}
-
-def acquire_lock(lockname):
-    global dlm
-    global global_locks
-    lock = None
-    try_to_lock = True
-    while try_to_lock:
-        lock = dlm.lock(lockname, 1000) if lockname not in global_locks else False
-        if lock is not False:
-            global_locks[lockname] = lock
-            fo = open("/opt/logs/db_api.log", "a")
-            fo.write("[NET] acquired lock: %s\n" % (lockname))
-            fo.close()
-            return lock
-        else:
-            time.sleep(0.05)
-
-def release_lock(lockname):
-    global global_locks
-    if lockname in global_locks:
-        lock = global_locks[lockname]
-        dlm.unlock(lock)
-        del global_locks[lockname]
-        fo = open("/opt/logs/db_api.log", "a")
-        fo.write("[NET] released lock: %s\n" % (lockname))
-        fo.close()
-        return True
-    else:
-        return False
 
 
 @require_admin_context
