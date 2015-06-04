@@ -540,7 +540,7 @@ def service_create(context, values):
     acquire_lock(lockname)
 
     service_ref = models.Service()
-    service_ref.update(values, do_save=False)
+    service_ref.update(values)
 
     if not CONF.enable_new_services:
         service_ref.disabled = True
