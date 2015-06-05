@@ -567,26 +567,28 @@ from filelock import FileLock
 @require_admin_context
 def service_create(context, values):
 
-    lockname = "lock_service_create"
-    acquire_lock(lockname)
+    # lockname = "lock_service_create"
+    # acquire_lock(lockname)
+
+    print("creating a service with following properies: %s" % (values))
 
     service_ref = models.Service()
     service_ref.update(values)
     service_ref.save()
 
-    if not CONF.enable_new_services:
-        service_ref.disabled = True
+    # if not CONF.enable_new_services:
+    #     service_ref.disabled = True
 
-    service_binary = model_query(context, models.Service).\
-                    filter_by(host=values.get('host')).\
-                    filter_by(binary=values.get('binary')).\
-                    all()
-    if service_binary is None:
-        service_topic = model_query(context, models.Service).\
-                    filter_by(host=values.get('host')).\
-                    filter_by(topic=values.get('topic')).\
-                    all()
-        # if service_topic is None:
+    # service_binary = model_query(context, models.Service).\
+    #                 filter_by(host=values.get('host')).\
+    #                 filter_by(binary=values.get('binary')).\
+    #                 all()
+    # if service_binary is None:
+    #     service_topic = model_query(context, models.Service).\
+    #                 filter_by(host=values.get('host')).\
+    #                 filter_by(topic=values.get('topic')).\
+    #                 all()
+    #     # if service_topic is None:
         #     service_ref.save()
         # else:
         #     release_lock(lockname)
@@ -606,7 +608,7 @@ def service_create(context, values):
     #                     binary=values.get('binary'))
     #     raise exception.ServiceTopicExists(host=values.get('host'),
     #                     topic=values.get('topic'))
-    release_lock(lockname)
+    # release_lock(lockname)
     return service_ref
 
 
