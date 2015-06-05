@@ -116,11 +116,42 @@ def get_engine(use_slave=False):
 #     facade = _create_facade_lazily()
 #     return facade.get_session(use_slave=use_slave, **kwargs)
 
+class ControlledExecution():
+
+    def __enter__(self):
+        pass 
+    
+    def __exit__(self, type, value, traceback):
+        pass 
+
+class FakeSession():   
+
+    def add(self, *objs):
+        for obj in objs:
+            obj.save()
+
+    def query(self, *entities, **kwargs):
+        return RiakModelQuery(*entities, **kwargs)
+
+    def begin(self, *args, **kwargs):
+        return ControlledExecution()
+
+    def flush(self, *args, **kwargs):
+        pass
+
+
+
 def get_session(use_slave=False, **kwargs):
     # facade = _create_facade_lazily(use_slave)
     # return facade.get_session(**kwargs)
 
-    return RomeSession()
+    return FakeSession()
+    
+# def get_session(use_slave=False, **kwargs):
+#     # facade = _create_facade_lazily(use_slave)
+#     # return facade.get_session(**kwargs)
+
+#     return RomeSession()
 
 Lock = namedtuple("Lock", ("validity", "resource", "key"))
 
