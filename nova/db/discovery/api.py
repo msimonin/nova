@@ -131,7 +131,7 @@ class FakeSession():
             obj.save()
 
     def query(self, *entities, **kwargs):
-        return RiakModelQuery(*entities, **kwargs)
+        return RomeQuery(*entities, **kwargs)
 
     def begin(self, *args, **kwargs):
         return ControlledExecution()
