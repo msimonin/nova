@@ -598,12 +598,12 @@ def service_create_(context, values):
                     filter_by(host=values.get('host')).\
                     filter_by(binary=values.get('binary')).\
                     all()
-    if service_binary is None:
+    if len(service_binary) == 0:
         service_topic = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
                     filter_by(topic=values.get('topic')).\
                     all()
-        if service_topic is None:
+        if len(service_topic) ==0:
             print("creating a service with following properies: %s saving (1)" % (values))
             service_ref.save()
         else:
