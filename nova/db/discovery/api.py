@@ -567,9 +567,18 @@ from filelock import FileLock
 @require_admin_context
 def service_create(context, values):
 
-    # lockname = "lock_service_create"
-    # acquire_lock(lockname)
+    lockname = "lock_service_create"
+    acquire_lock(lockname)
+    result = None
+    try:
+        result = service_create_(context, values)
+        release_lock(lockname)
+    except:
+        release_lock(lockname)
+        raise
+    return result
 
+def service_create_(context, values):
     print("creating a service with following properies: %s" % (values))
 
     service_ref = models.Service()
