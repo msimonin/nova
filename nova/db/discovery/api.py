@@ -585,7 +585,10 @@ def service_create_(context, values):
     print("creating a service with following properies: %s" % (values))
 
     service_ref = models.Service()
-    service_ref.update(values, do_save=False)
+
+    for each in values:
+        setattr(service_ref, each, values[each])
+    # service_ref.update(values, do_save=False)
     # service_ref.save()
 
     if not CONF.enable_new_services:
