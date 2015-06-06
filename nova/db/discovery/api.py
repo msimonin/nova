@@ -569,12 +569,15 @@ def service_create(context, values):
 
     lockname = "lock_service_create"
     acquire_lock(lockname)
+    print("creating a service with following properies: %s, acquired lock" % (values))
     result = None
     try:
         result = service_create_(context, values)
         release_lock(lockname)
+        print("creating a service with following properies: %s, released lock" % (values))
     except:
         release_lock(lockname)
+        print("creating a service with following properies: %s, released lock" % (values))
         raise
     return result
 
@@ -598,6 +601,7 @@ def service_create_(context, values):
                     filter_by(topic=values.get('topic')).\
                     all()
         if service_topic is None:
+            print("creating a service with following properies: %s saving (1)" % (values))
             service_ref.save()
         else:
             raise exception.ServiceTopicExists(host=values.get('host'),
@@ -608,6 +612,7 @@ def service_create_(context, values):
     if not CONF.enable_new_services:
         service_ref.disabled = True
     try:
+        print("creating a service with following properies: %s saving (2)" % (values))
         service_ref.save()
     except db_exc.DBDuplicateEntry as e:
         if 'binary' in e.columns:
