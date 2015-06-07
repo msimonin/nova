@@ -568,6 +568,7 @@ from filelock import FileLock
 def service_create(context, values):
 
     lockname = "lock_service_create"
+    print("creating a service with following properies: %s, acquiring lock" % (values))
     acquire_lock(lockname)
     print("creating a service with following properies: %s, acquired lock" % (values))
     result = None
