@@ -593,6 +593,8 @@ def service_create_(context, values):
 
     if not CONF.enable_new_services:
         service_ref.disabled = True
+    else:
+        service_ref.disabled = False
 
     service_binary = model_query(context, models.Service).\
                     filter_by(host=values.get('host')).\
@@ -614,6 +616,8 @@ def service_create_(context, values):
             binary=values.get('binary'))
     if not CONF.enable_new_services:
         service_ref.disabled = True
+    else:
+        service_ref.disabled = False
     try:
         print("creating a service with following properies: %s saving (2)" % (values))
         service_ref.save()
