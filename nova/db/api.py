@@ -102,7 +102,7 @@ class DbApiProxy:
             import json
             current_milli_time = lambda: int(round(time.time() * 1000))
 
-            print("before calling n-api's %s method with args: and kwargs:%s" % (self.call_name, json.dumps(str(args)), json.dumps(str(kwargs))))
+            print("before calling n-api's %s method with args:%s and kwargs:%s" % (self.call_name, json.dumps(str(args)), json.dumps(str(kwargs))))
 
             time1 = current_milli_time()
             if self.use_mysql:
