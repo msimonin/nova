@@ -153,6 +153,15 @@ def get_session(use_slave=False, **kwargs):
 
 #     return RomeSession()
 
+from redlock import Redlock as Redlock
+import time
+
+# dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
+
+from lib.rome.driver.redis.lock import ClusterLock as ClusterLock
+
+dlm = ClusterLock()
+
 Lock = namedtuple("Lock", ("validity", "resource", "key"))
 
 global_locks = {}
@@ -1614,10 +1623,6 @@ def fixed_ips_by_virtual_interface(context, vif_id):
 
     return result
 
-from redlock import Redlock as Redlock
-import time
-
-dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
 
 @require_context
 def fixed_ip_update(context, address, values):
