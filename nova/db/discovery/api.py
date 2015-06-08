@@ -162,38 +162,38 @@ from lib.rome.driver.redis.lock import ClusterLock as ClusterLock
 
 dlm = ClusterLock()
 
-Lock = namedtuple("Lock", ("validity", "resource", "key"))
+# Lock = namedtuple("Lock", ("validity", "resource", "key"))
 
-global_locks = {}
+# global_locks = {}
 
 def acquire_lock(lockname):
     global dlm
-    global global_locks
-    lock = None
+    # global global_locks
+    # lock = None
     try_to_lock = True
     while try_to_lock:
         lock = dlm.lock(lockname, 1000) if lockname not in global_locks else False
         if lock is not False:
-            global_locks[lockname] = lock
+            # global_locks[lockname] = lock
             fo = open("/opt/logs/db_api.log", "a")
             fo.write("[NET] acquired lock: %s\n" % (lockname))
             fo.close()
-            return lock
-        else:
-            time.sleep(0.05)
+            return True
 
 def release_lock(lockname):
-    global global_locks
-    if lockname in global_locks:
-        lock = global_locks[lockname]
-        dlm.unlock(lock)
-        del global_locks[lockname]
-        fo = open("/opt/logs/db_api.log", "a")
-        fo.write("[NET] released lock: %s\n" % (lockname))
-        fo.close()
-        return True
-    else:
-        return False
+    global dlm
+    dlm.unlock(lockname)
+    # global global_locks
+    # if lockname in global_locks:
+    #     lock = global_locks[lockname]
+    #     dlm.unlock(lock)
+    #     del global_locks[lockname]
+    #     fo = open("/opt/logs/db_api.log", "a")
+    #     fo.write("[NET] released lock: %s\n" % (lockname))
+    #     fo.close()
+    #     return True
+    # else:
+    #     return False
 
 
 _SHADOW_TABLE_PREFIX = 'shadow_'
