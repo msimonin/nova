@@ -1248,8 +1248,8 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     fo = open("/opt/logs/db_api.log", "a")
     fo.write("[NET] api.fixed_ip_associate() (1-a): address: %s\n" % (address))
     session = get_session()
-    lockname = "lock-fixed_ip_associate"
-    acquire_lock(lockname)
+    # lockname = "lock-fixed_ip_associate_%s" % (address)
+    # acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
     with session.begin():
@@ -1274,10 +1274,10 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
             fixed_ip_ref.instance_uuid = instance_uuid
             session.add(fixed_ip_ref)
     # give 50ms to the session to commit changes; then the lock is released.
-    time.sleep(0.05)
+    # time.sleep(0.05)
     # fixed_ip_lock = Lock(1000, "fixed_address_%s" % (address))
     release_lock("lock-fixed_ip_%s" % (address))
-    release_lock(lockname)
+    # release_lock(lockname)
     if fixed_ip_ref_is_none:
         raise exception.FixedIpNotFoundForNetwork(address=address,
                                                   network_uuid=network_id)
@@ -1297,8 +1297,8 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
     fo = open("/opt/logs/db_api.log", "a")
     fo.write("[NET] api.fixed_ip_associate_pool() (1-a): network_id: %s\n" % (str(network_id)))
     session = get_session()
-    lockname = "lock-fixed_ip_associate_pool"
-    acquire_lock(lockname)
+    # lockname = "lock-fixed_ip_associate_pool"
+    # acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
     fixed_ip_ref_no_more = False
@@ -1330,8 +1330,8 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                 fixed_ip_ref['host'] = host
             session.add(fixed_ip_ref)
     # give 100ms to the session to commit changes; then the lock is released.
-    time.sleep(0.1)
-    release_lock(lockname)
+    # time.sleep(0.1)
+    # release_lock(lockname)
     if fixed_ip_ref_no_more:
             raise exception.NoMoreFixedIps(net=network_id)
     fo.write("[NET] api.fixed_ip_associate_pool() (1-c): return: %s\n" % (fixed_ip_ref))
