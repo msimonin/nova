@@ -170,7 +170,7 @@ def acquire_lock(lockname):
     global dlm
     try_to_lock = True
     while try_to_lock:
-        if dlm.lock(lockname, 200):
+        if dlm.lock(lockname, 1000):
             fo = open("/opt/logs/db_api.log", "a")
             fo.write("[NET] acquired lock: %s\n" % (lockname))
             fo.close()
