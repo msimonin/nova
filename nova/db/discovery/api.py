@@ -76,6 +76,7 @@ from lib.rome.core.orm.query import or_
 from lib.rome.core.orm.query import and_
 from lib.rome.core.orm.query import Query as RomeQuery
 from lib.rome.core.session.session import Session as RomeSession
+from lib.rome.core.session.session import SessionDeadlock
 from nova.db.discovery import models
 from collections import namedtuple
 import random
@@ -258,7 +259,7 @@ def _retry_on_deadlock(f):
         while True:
             try:
                 return f(*args, **kwargs)
-            except db_exc.DBDeadlock:
+            except SessionDeadlock:
                 LOG.warn(_("Deadlock detected when running "
                            "'%(func_name)s': Retrying..."),
                            dict(func_name=f.__name__))
