@@ -259,7 +259,7 @@ def _retry_on_deadlock(f):
         while True:
             try:
                 return f(*args, **kwargs)
-            except SessionDeadlock:
+            except db_exc.DBDeadlock:
                 LOG.warn(_("Deadlock detected when running "
                            "'%(func_name)s': Retrying..."),
                            dict(func_name=f.__name__))
