@@ -144,9 +144,6 @@ class FakeSession():
 
 
 def get_session(use_slave=False, **kwargs):
-    # facade = _create_facade_lazily(use_slave)
-    # return facade.get_session(**kwargs)
-
     # return FakeSession()
     # return RomeSession()
     return OldRomeSession()
