@@ -76,6 +76,7 @@ from lib.rome.core.orm.query import or_
 from lib.rome.core.orm.query import and_
 from lib.rome.core.orm.query import Query as RomeQuery
 from lib.rome.core.session.session import Session as RomeSession
+from lib.rome.core.session.session import OldSession as OldRomeSession
 from lib.rome.core.session.session import SessionDeadlock
 from nova.db.discovery import models
 from collections import namedtuple
@@ -146,7 +147,9 @@ def get_session(use_slave=False, **kwargs):
     # facade = _create_facade_lazily(use_slave)
     # return facade.get_session(**kwargs)
 
-    return FakeSession()
+    # return FakeSession()
+    # return RomeSession()
+    return OldRomeSession()
     
 # def get_session(use_slave=False, **kwargs):
 #     # facade = _create_facade_lazily(use_slave)
