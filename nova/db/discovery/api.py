@@ -637,7 +637,9 @@ def service_update(context, service_id, values):
         if values.keys() == ["report_count"]:
             if not values["report_count"] == service_ref.report_count:
                 service_ref.update(values)
-
+                # TODO (Jonathan): add a "session.add" to ease the session management :)
+                session.add(service_ref)
+                
     return service_ref
 
 
@@ -778,6 +780,9 @@ def compute_node_update(context, compute_id, values):
         datetime_keys = ('created_at', 'deleted_at', 'updated_at')
         convert_objects_related_datetimes(values, *datetime_keys)
         compute_ref.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(compute_ref)
+
 
     return compute_ref
 
@@ -1030,13 +1035,16 @@ def floating_ip_fixed_ip_associate(context, floating_address,
 def floating_ip_deallocate(context, address):
     session = get_session()
     with session.begin():
-        return model_query(context, models.FloatingIp, session=session).\
+        result = model_query(context, models.FloatingIp, session=session).\
             filter_by(address=address).\
-            filter(models.FloatingIp.project_id != null()).\
-            update({'project_id': None,
+            filter(models.FloatingIp.project_id != null())
+        result.update({'project_id': None,
                     'host': None,
                     'auto_assigned': False},
                    synchronize_session=False)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(result)
+        return result
 
 
 @require_context
@@ -1421,7 +1429,7 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
         host_filter = or_(and_(models.Instance.host == host,
                                models.Network.multi_host == true()),
                           models.Network.host == host)
-        result = model_query(context, models.FixedIp.id,
+        fixed_ip_ref = model_query(context, models.FixedIp.id,
                              base_model=models.FixedIp, read_deleted="no",
                              session=session).\
                 filter(models.FixedIp.leased == True).\
@@ -1431,11 +1439,16 @@ def fixed_ip_disassociate_all_by_timeout(context, host, time):
                       models.Network.id == models.FixedIp.network_id)).\
                 join((models.Instance,
                       models.Instance.uuid == models.FixedIp.instance_uuid)).\
-                filter(host_filter).\
-                update({'instance_uuid': None,
+                filter(host_filter).first()
+        if fixed_ip_ref is not None:
+            # TODO (Jonathan): add a "session.add" to ease the session management :)
+            result = fixed_ip_ref.update({'instance_uuid': None,
                                      'leased': False,
                                      'updated_at': timeutils.utcnow()},
                                     synchronize_session='fetch')
+            session.add(fixed_ip_ref)
+        else:
+            result = False
         return result
 
 @require_context
@@ -2662,6 +2675,8 @@ def instance_info_cache_update(context, instance_uuid, values):
 
         try:
             info_cache.update(values)
+            # TODO (Jonathan): add a "session.add" to ease the session management :)
+            session.add(info_cache)
         except db_exc.DBDuplicateEntry:
             # NOTE(sirp): Possible race if two greenthreads attempt to
             # recreate the instance cache entry at the same time. First one
@@ -3994,6 +4009,8 @@ def block_device_mapping_update_or_create(context, values, legacy=True):
 
         if result:
             result.update(values)
+            # TODO (Jonathan): add a "session.add" to ease the session management :)
+            session.add(result)
         else:
             # Either the device_name doesn't exist in the database yet, or no
             # device_name was provided. Both cases mean creating a new BDM.
@@ -4259,6 +4276,8 @@ def _security_group_ensure_default(context, session=None):
                                     session=session)
             else:
                 usage.update({'in_use': int(usage.first().in_use) + 1})
+                # TODO (Jonathan): add a "session.add" to ease the session management :)
+                session.add(usage)
 
             default_rules = _security_group_rule_get_default_query(context,
                                 session=session).all()
@@ -4494,6 +4513,8 @@ def migration_update(context, id, values):
     with session.begin():
         migration = _migration_get(context, id, session=session)
         migration.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(migration)
 
     return migration
 
@@ -5836,6 +5857,8 @@ def action_finish(context, values):
                                         instance_uuid=values['instance_uuid'])
 
         action_ref.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(action_ref)
     return action_ref
 
 
@@ -5907,9 +5930,13 @@ def action_event_finish(context, values):
             raise exception.InstanceActionEventNotFound(action_id=action['id'],
                                                         event=values['event'])
         event_ref.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(event_ref)
 
         if values['result'].lower() == 'error':
             action.update({'message': 'Error'})
+            # TODO (Jonathan): add a "session.add" to ease the session management :)
+            session.add(action)
 
     return event_ref
 
@@ -6268,6 +6295,8 @@ def instance_group_update(context, group_uuid, values):
                                         session=session)
 
         group.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(group)
 
         if policies:
             values['policies'] = policies
