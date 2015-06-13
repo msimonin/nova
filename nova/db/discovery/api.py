@@ -1257,8 +1257,8 @@ def fixed_ip_associate(context, address, instance_uuid, network_id=None,
     fo = open("/opt/logs/db_api.log", "a")
     fo.write("[NET] api.fixed_ip_associate() (1-a): address: %s\n" % (address))
     session = get_session()
-    # lockname = "lock-fixed_ip_associate_%s" % (address)
-    # acquire_lock(lockname)
+    lockname = "lock-fixed_ip_associate_%s" % (address)
+    acquire_lock(lockname)
     fixed_ip_ref_is_none = False
     fixed_ip_ref_instance_uuid_is_not_none = False
     with session.begin():
@@ -1328,7 +1328,7 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
         if not fixed_ip_ref:
             fixed_ip_ref_no_more = True
         else:
-            # acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
+            acquire_lock("lock-fixed_ip_%s" % (fixed_ip_ref.address))
             if fixed_ip_ref['network_id'] is None:
                 fixed_ip_ref['network'] = network_id
 
