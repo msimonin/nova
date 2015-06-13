@@ -1633,8 +1633,10 @@ def fixed_ip_update(context, address, values):
         fo.write("[NET] api.fixed_ip_update() (1-b): values: %s\n" % (str(values)))
         fo.close()
 
-        _fixed_ip_get_by_address(context, address, session=session).\
-                                 update(values)
+        fixed_ip_ref = _fixed_ip_get_by_address(context, address, session=session)
+        fixed_ip_ref.update(values)
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(fixed_ip_ref)
 
 
 def _fixed_ip_count_by_project(context, project_id, session=None):
