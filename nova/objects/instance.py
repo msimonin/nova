@@ -286,8 +286,6 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
         if 'metadata' in expected_attrs:
             instance['metadata'] = utils.instance_meta(db_inst)
         if 'system_metadata' in expected_attrs:
-            print(">> db_inst => %s" % (db_inst))
-            print(">> utils.instance_sys_meta(db_inst) => %s" % (utils.instance_sys_meta(db_inst)))
             instance['system_metadata'] = utils.instance_sys_meta(db_inst)
         if 'fault' in expected_attrs:
             instance['fault'] = (
