@@ -285,8 +285,12 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
 
         if 'metadata' in expected_attrs:
             instance['metadata'] = utils.instance_meta(db_inst)
-        if 'system_metadata' in expected_attrs:
-            instance['system_metadata'] = utils.instance_sys_meta(db_inst)
+        try:
+            if 'system_metadata' in expected_attrs:
+                instance['system_metadata'] = utils.instance_sys_meta(db_inst)
+        except:
+            LOG.error("instance._from_db_object encountered an error with %s" % (db_inst))
+            raise
         if 'fault' in expected_attrs:
             instance['fault'] = (
                 objects.InstanceFault.get_latest_for_instance(
