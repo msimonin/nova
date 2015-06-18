@@ -39,6 +39,8 @@ from nova.db.discovery import api as discovery_api
 
 import ConfigParser
 
+import logging
+
 NovaConfig = ConfigParser.ConfigParser()
 NovaConfig.read("/etc/nova/nova.conf")
 
@@ -102,7 +104,7 @@ class DbApiProxy:
             import json
             current_milli_time = lambda: int(round(time.time() * 1000))
 
-            print("before calling n-api's %s method with args:%s and kwargs:%s" % (self.call_name, json.dumps(str(args)), json.dumps(str(kwargs))))
+            logging.info("before calling n-api's %s method with args:%s and kwargs:%s" % (self.call_name, json.dumps(str(args)), json.dumps(str(kwargs))))
 
             time1 = current_milli_time()
             if self.use_mysql:
@@ -117,7 +119,7 @@ class DbApiProxy:
                 label, self.call_name, json.dumps(str(args)), json.dumps(str(kwargs)), json.dumps(str(result_callable)), time1, time2 - time1
             )
 
-            print(pretty_print_callable)
+            logging.info(pretty_print_callable)
 
             fo = open("/opt/logs/db_api.log", "a")
 
