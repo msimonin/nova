@@ -4076,6 +4076,7 @@ def block_device_mapping_destroy_by_instance_and_device(context, instance_uuid,
 ###################
 
 def _security_group_create(context, values, session=None):
+    acquire_lock("_security_group_create")
     security_group_ref = models.SecurityGroup()
     # FIXME(devcamcar): Unless I do this, rules fails with lazy load exception
     # once save() is called.  This will get cleaned up in next orm pass.
@@ -4084,9 +4085,11 @@ def _security_group_create(context, values, session=None):
     try:
         security_group_ref.save(session=session)
     except db_exc.DBDuplicateEntry:
+        release_lock("_security_group_create")
         raise exception.SecurityGroupExists(
                 project_id=values['project_id'],
                 security_group_name=values['name'])
+    release_lock("_security_group_create")
     return security_group_ref
 
 
