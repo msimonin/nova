@@ -4280,9 +4280,10 @@ def _security_group_ensure_default(context, session=None):
                                     None,
                                     session=session)
             else:
-                usage.update({'in_use': int(usage.first().in_use) + 1})
+                usage_ref = usage.first()
+                usage_ref.update({'in_use': int(usage_ref.in_use) + 1})
                 # TODO (Jonathan): add a "session.add" to ease the session management :)
-                session.add(usage)
+                session.add(usage_ref)
 
             default_rules = _security_group_rule_get_default_query(context,
                                 session=session).all()
