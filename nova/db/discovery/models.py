@@ -51,6 +51,7 @@ def MediumText():
     return Text().with_variant(MEDIUMTEXT(), 'mysql')
 
 @global_scope
+@secondary_index_decorator("host")
 class Service(BASE, NovaBase):
     """Represents a running service on a host."""
 
@@ -1288,6 +1289,8 @@ class InstanceFault(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
+@secondary_index_decorator("request_id")
 class InstanceAction(BASE, NovaBase):
     """Track client actions on an instance.
 
@@ -1313,6 +1316,8 @@ class InstanceAction(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("action_id")
+@secondary_index_decorator("event")
 class InstanceActionEvent(BASE, NovaBase):
     """Track events that occur during an InstanceAction."""
     __tablename__ = 'instance_actions_events'
