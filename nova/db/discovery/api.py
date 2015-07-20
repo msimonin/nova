@@ -715,21 +715,21 @@ def compute_node_get_all(context, no_date_fields):
     #     node['service'] = services.get(proxy['service_id'])
 
     #     compute_nodes.append(node)
-    from lib.rome.core.dataformat.converter import JsonConverter
-    from lib.rome.core.dataformat.deconverter import JsonDeconverter
+    from lib.rome.core.dataformat.json import Encoder
+    from lib.rome.core.dataformat.json import Decoder
 
     query = RomeQuery(models.ComputeNode)
     compute_nodes = query.all()
 
     def novabase_to_dict(ref):
         request_uuid = uuid.uuid1()
-        converter = JsonConverter(request_uuid=request_uuid)
-        deconverter = JsonDeconverter(request_uuid=request_uuid)
+        encoder = Encoder(request_uuid=request_uuid)
+        decoder = Decoder(request_uuid=request_uuid)
 
-        json_object = converter.simplify(ref)
+        json_object = encoder.simplify(ref)
         json_object.pop("metadata_novabase_classname")
         
-        return deconverter.desimplify(json_object)
+        return decoder.desimplify(json_object)
 
     result = []
     for each in compute_nodes:
