@@ -154,7 +154,6 @@ def get_session(use_slave=False, **kwargs):
 
 #     return RomeSession()
 
-from redlock import Redlock as Redlock
 import time
 
 # dlm = Redlock([{"host": "localhost", "port": 6379, "db": 0}, ], retry_count=10)
