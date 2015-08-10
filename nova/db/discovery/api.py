@@ -263,7 +263,7 @@ def _retry_on_deadlock(f):
                            "'%(func_name)s': Retrying..."),
                            dict(func_name=f.__name__))
                 # Retry!
-                time.sleep(0.5)
+                time.sleep(0.2)
                 continue
     functools.update_wrapper(wrapped, f)
     return wrapped
