@@ -251,6 +251,8 @@ def require_aggregate_exists(f):
     return wrapper
 
 
+import random
+
 def _retry_on_deadlock(f):
     """Decorator to retry a DB API call if Deadlock was received."""
     @functools.wraps(f)
@@ -263,7 +265,8 @@ def _retry_on_deadlock(f):
                            "'%(func_name)s': Retrying..."),
                            dict(func_name=f.__name__))
                 # Retry!
-                time.sleep(0.2)
+                sleep_duration = random.uniform(0.1, 0.5)
+                time.sleep(sleep_duration)
                 continue
     functools.update_wrapper(wrapped, f)
     return wrapped
