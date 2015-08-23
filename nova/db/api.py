@@ -42,7 +42,8 @@ import ConfigParser
 import logging
 
 NovaConfig = ConfigParser.ConfigParser()
-NovaConfig.read("/etc/nova/nova.conf")
+# NovaConfig.read("/etc/nova/nova.conf")
+NovaConfig.read("/etc/rome/rome.conf")
 
 db_opts = [
     cfg.BoolOpt('enable_new_services',
@@ -137,7 +138,8 @@ _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api', 'discovery': 'nova.db
 
 db_backend = "sqlalchemy"
 try:
-    db_backend = NovaConfig.get("database", "backend")
+    # db_backend = NovaConfig.get("database", "backend")
+    db_backend = NovaConfig.get("Rome", "backend")
 except:
     pass
 
