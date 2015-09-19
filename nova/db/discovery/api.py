@@ -5531,6 +5531,8 @@ def aggregate_create(context, values, metadata=None):
         # nothing here since we just created this aggregate.
         aggregate._hosts = []
         aggregate._metadata = []
+        # TODO (Jonathan): add a "session.add" to ease the session management :)
+        session.add(aggregate)
     else:
         raise exception.AggregateNameExists(aggregate_name=values['name'])
     if metadata:
