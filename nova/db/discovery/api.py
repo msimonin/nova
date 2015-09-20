@@ -5535,6 +5535,7 @@ def aggregate_create(context, values, metadata=None):
         aggregate._metadata = []
         # TODO (Jonathan): add a "session.add" to ease the session management :)
         session.add(aggregate)
+        session.flush()
     else:
         raise exception.AggregateNameExists(aggregate_name=values['name'])
     if metadata:
