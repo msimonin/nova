@@ -5523,10 +5523,12 @@ def aggregate_create(context, values, metadata=None):
                                  session=session,
                                  read_deleted='no')
     aggregate = query.first()
+    print("[aggregate_create] aggregate:%s" % (aggregate))
     if not aggregate:
         aggregate = models.Aggregate()
         aggregate.update(values)
         aggregate.save(session=session)
+        print("[aggregate_create] save(%s)" % (aggregate))
         # We don't want these to be lazy loaded later.  We know there is
         # nothing here since we just created this aggregate.
         aggregate._hosts = []
