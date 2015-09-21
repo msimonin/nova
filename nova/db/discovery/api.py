@@ -5622,11 +5622,19 @@ def aggregate_get_by_metadata_key(context, key):
     :param key Matches metadata key.
     """
     query = model_query(context, models.Aggregate)
-    query = query.join("_metadata")
+    # TODO(jonathan): change following to support ROME convention.
+    # query = query.join("_metadata")
+    query = query.join(models.AggregateMetadata)    
     query = query.filter(models.AggregateMetadata.key == key)
     query = query.options(contains_eager("_metadata"))
     query = query.options(joinedload("_hosts"))
-    return query.all()
+    # TODO(jonathan): change following to support ROME convention.
+    # return query.all()
+    result = query.all()
+    print("[aggregate_get_by_metadata_key] result:%s" % (result))
+    processed_result = map(lambda x: x[0], query.all())
+    print("[aggregate_get_by_metadata_key] processed_result:%s" % (processed_result))
+    return processed_result
 
 
 def aggregate_update(context, aggregate_id, values):
