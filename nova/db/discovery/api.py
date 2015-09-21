@@ -5757,10 +5757,25 @@ def aggregate_metadata_add(context, aggregate_id, metadata, set_delete=False,
                     new_entries.append({"key": key,
                                         "value": value,
                                         "aggregate_id": aggregate_id})
-                if new_entries:
-                    session.execute(
-                        models.AggregateMetadata.__table__.insert(),
-                        new_entries)
+                    aggregateMetadata = models.AggregateMetadata()
+                    aggregateMetadata.key = key
+                    aggregateMetadata.value = value
+                    aggregateMetadata.aggregate_id = aggregate_id
+                    aggregateMetadata.save()
+
+                # TODO (Jonathan): comment following as there is no session.execute()
+                # method in my solutib
+                # new_entries = []
+                # for key, value in metadata.iteritems():
+                #     if key in already_existing_keys:
+                #         continue
+                #     new_entries.append({"key": key,
+                #                         "value": value,
+                #                         "aggregate_id": aggregate_id})
+                # if new_entries:
+                #     session.execute(
+                #         models.AggregateMetadata.__table__.insert(),
+                #         new_entries)
 
             return metadata
         except db_exc.DBDuplicateEntry:
