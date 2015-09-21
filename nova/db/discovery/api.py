@@ -5667,6 +5667,8 @@ def aggregate_update(context, aggregate_id, values):
 
         aggregate.update(values)
         aggregate.save(session=session)
+        # TODO (jonathan): add a session flush here to detect a bug with aggregates.
+        session.flush()
         values['metadata'] = metadata
         return aggregate_get(context, aggregate.id)
     else:
