@@ -5544,11 +5544,13 @@ def aggregate_create(context, values, metadata=None):
 
 
 def aggregate_get(context, aggregate_id):
+    print("[aggregate_get] id:%s" % (aggregate_id))
     query = _aggregate_get_query(context,
                                  models.Aggregate,
                                  models.Aggregate.id,
                                  aggregate_id)
     aggregate = query.first()
+    print("[aggregate_get] aggregate:%s" % (aggregate))
 
     if not aggregate:
         raise exception.AggregateNotFound(aggregate_id=aggregate_id)
