@@ -269,6 +269,7 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
 
         Converts a database entity to a formal object.
         """
+        print("[DEBUG_LOG] instance._from_db_object(%s, %s, %s)" % (instance, db_inst, expected_attrs))
         instance._context = context
         if expected_attrs is None:
             expected_attrs = []
