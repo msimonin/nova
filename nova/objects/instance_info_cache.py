@@ -41,6 +41,7 @@ class InstanceInfoCache(base.NovaPersistentObject, base.NovaObject):
 
     @staticmethod
     def _from_db_object(context, info_cache, db_obj):
+        print("[DEBUG_LOG] instance_info_cache._from_db_object(%s, %s)" % (info_cache, db_obj))
         for field in info_cache.fields:
             info_cache[field] = db_obj[field]
         info_cache.obj_reset_changes()
