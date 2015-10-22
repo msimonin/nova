@@ -91,6 +91,7 @@ class DbDriver(api.ServiceGroupDriver):
         ctxt = context.get_admin_context()
         state_catalog = {}
         try:
+            print("[debugging-servicegroup._report_state] service=%s" % (service.service_ref))
             report_count = service.service_ref['report_count'] + 1
             state_catalog['report_count'] = report_count
 
