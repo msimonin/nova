@@ -643,7 +643,10 @@ def service_update(context, service_id, values):
                 service_ref.update(values)
                 # TODO (Jonathan): add a "session.add" to ease the session management :)
                 session.add(service_ref)
-    print("[service_update] return %s which is %s" % (service_ref, type(service_ref)))        
+    print("[service_update] return %s which is %s" % (service_ref, type(service_ref)))
+    if hasattr(service_ref, "is_lazy_value"):
+        print("[service_update] service_ref is a lazy_value, load the real object!")
+        service_ref = service_ref.get_complex_ref()
     return service_ref
 
 
