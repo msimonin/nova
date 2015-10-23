@@ -455,6 +455,7 @@ def _service_get(context, service_id, with_compute_node=True, session=None,
     if not result:
         raise exception.ServiceNotFound(service_id=service_id)
 
+    print("[_service_get] _service_get(context, %s, with_compute_node=%s, session=%s, use_slave=%s) return %s which is %s" % (service_id, with_compute_node, session, use_slave, result, type(result))) 
     return result
 
 
@@ -641,7 +642,7 @@ def service_update(context, service_id, values):
                 service_ref.update(values)
                 # TODO (Jonathan): add a "session.add" to ease the session management :)
                 session.add(service_ref)
-                
+    print("[service_update] return %s which is %s" % (service_ref, type(service_ref)))        
     return service_ref
 
 
