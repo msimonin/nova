@@ -738,14 +738,15 @@ def compute_node_get_all(context, no_date_fields):
         
         return decoder.desimplify(json_object)
 
-    result = []
-    for each in compute_nodes:
-        compute_node = novabase_to_dict(each)
-        compute_node["service"] = novabase_to_dict(compute_node["service"])
-        compute_node["service"].pop("compute_node")
-        result += [compute_node]
+    #result = []
+    #for each in compute_nodes:
+    #    compute_node = novabase_to_dict(each)
+    #    compute_node["service"] = novabase_to_dict(compute_node["service"])
+    #    compute_node["service"].pop("compute_node")
+    #    result += [compute_node]
 
-    return result
+    #return result
+    return compute_nodes
 
 
 @require_admin_context
