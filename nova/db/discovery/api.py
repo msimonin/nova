@@ -5582,8 +5582,8 @@ def aggregate_get_by_host(context, host, key=None):
     return query.all()
 
 
-def aggregate_metadata_get_by_host(host, key=None):
-    query = Query(models.Aggregate)
+def aggregate_metadata_get_by_host(context, host, key=None):
+    query = model_query(context, models.Aggregate)
     # TODO(jonathan): change following to support ROME convention.
     query = query.join("_metadata")
     query = query.join(models.AggregateMetadata)
