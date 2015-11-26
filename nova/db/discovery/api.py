@@ -3122,27 +3122,68 @@ def network_get_by_cidr(context, cidr):
 
 
 @require_admin_context
+# def network_get_all_by_host(context, host):
+#     session = get_session()
+#     fixed_host_filter = or_(models.FixedIp.host == host,
+#             and_(models.FixedIp.instance_uuid != null(),
+#                  models.Instance.host == host))
+#     fixed_ip_query = model_query(context, models.FixedIp.network_id,
+#                                  base_model=models.FixedIp,
+#                                  session=session).\
+#                      outerjoin((models.Instance,
+#                                 models.Instance.uuid ==
+#                                 models.FixedIp.instance_uuid)).\
+#                      filter(fixed_host_filter)
+#     # NOTE(vish): return networks that have host set
+#     #             or that have a fixed ip with host set
+#     #             or that have an instance with host set
+#     host_filter = or_(models.Network.host == host,
+#                       models.Network.id.in_(fixed_ip_query.subquery()))
+#     return _network_get_query(context, session=session).\
+#                        filter(host_filter).\
+#                        all()
+@require_admin_context
 def network_get_all_by_host(context, host):
+    """ Todo(jonathan) This method has been reimplemented. """
     session = get_session()
-    fixed_host_filter = or_(models.FixedIp.host == host,
-            and_(models.FixedIp.instance_uuid != null(),
-                 models.Instance.host == host))
-    fixed_ip_query = model_query(context, models.FixedIp.network_id,
-                                 base_model=models.FixedIp,
-                                 session=session).\
-                     outerjoin((models.Instance,
-                                models.Instance.uuid ==
-                                models.FixedIp.instance_uuid)).\
-                     filter(fixed_host_filter)
-    # NOTE(vish): return networks that have host set
-    #             or that have a fixed ip with host set
-    #             or that have an instance with host set
-    host_filter = or_(models.Network.host == host,
-                      models.Network.id.in_(fixed_ip_query.subquery()))
-    return _network_get_query(context, session=session).\
-                       filter(host_filter).\
-                       all()
 
+    network_ids1 = model_query(context, models.Network, models.Network.id).filter(models.Network.host==host).all()
+    network_ids2 = model_query(context, models.Network, models.Network.id).join(models.FixedIp)\
+        .filter(models.Network.id==models.FixedIp.network_id)\
+        .filter(models.FixedIp.host==host)\
+        .all()
+    network_ids3 = model_query(context, models.Network, models.Network.id).join(models.FixedIp).join(models.Instance)\
+        .filter(models.Network.id==models.FixedIp.network_id)\
+        .filter(models.Instance.uuid==models.FixedIp.instance_uuid)\
+        .filter(models.Instance.host==host)\
+        .all()
+    # network_ids = Query(models.Network, models.Network.id).filter(models.Network.host==host).all()
+
+    # fixed_host_filter = or_(models.FixedIp.host == host,
+    #         and_(models.FixedIp.instance_uuid != None,
+    #              models.Instance.host == host))
+    # fixed_ip_query = model_query(context, models.FixedIp.network_id,
+    #                              base_model=models.FixedIp,
+    #                              session=session).\
+    #                  outerjoin((models.Instance,
+    #                             models.Instance.uuid ==
+    #                             models.FixedIp.instance_uuid)).\
+    #                  filter(fixed_host_filter)
+    # # NOTE(vish): return networks that have host set
+    # #             or that have a fixed ip with host set
+    # #             or that have an instance with host set
+    # host_filter = or_(models.Network.host == host,
+    #                   models.Network.id.in_(fixed_ip_query.subquery()))
+    # return _network_get_query(context, session=session).\
+    #                    filter(host_filter).\
+    #                    all()
+    processed_pairs = []
+    result = []
+    for pair in network_ids1 + network_ids2 + network_ids3:
+        if pair[1] not in processed_pairs:
+            processed_pairs += [pair[1]]
+            result += [pair[0]]
+    return result
 
 @require_admin_context
 def network_set_host(context, network_id, host_id):
