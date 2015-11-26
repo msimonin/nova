@@ -725,7 +725,8 @@ def compute_node_get_all(context, no_date_fields):
     from lib.rome.core.dataformat.json import Encoder
     from lib.rome.core.dataformat.json import Decoder
 
-    query = RomeQuery(models.ComputeNode)
+    query = RomeQuery(models.ComputeNode)\
+        .filter(models.ComputeNode.deleted==0)
     compute_nodes = query.all()
 
     def novabase_to_dict(ref):
@@ -1856,6 +1857,12 @@ def instance_create(context, values):
         instance_ref['info_cache'].update(info_cache)
     security_groups = values.pop('security_groups', [])
     instance_ref.update(values, do_save=False)
+
+    # TODO(jonathan): explicitly set the uuid for instance's metadata
+    for metadata in values.get("metadata"):
+        metadata.uuid = values["uuid"]
+    for metadata in values.get("system_metadata"):
+        metadata.uuid = values["uuid"]
 
     def _get_sec_group_models(session, security_groups):
         models = []
