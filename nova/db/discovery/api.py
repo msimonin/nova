@@ -5591,20 +5591,26 @@ def aggregate_get_by_host(context, host, key=None):
 
 def aggregate_metadata_get_by_host(context, host, key=None):
     query = model_query(context, models.Aggregate)
-    query = query.join("_hosts")
+    # TODO(jonathan): change following to support ROME convention.
     query = query.join("_metadata")
+    query = query.join(models.AggregateMetadata)
+    query = query.filter(models.AggregateMetadata.key == key)
+    query = query.join(models.AggregateHost)
+    # TODO(jonathan): change following to support ROME convention.
+
     query = query.filter(models.AggregateHost.host == host)
-    query = query.options(contains_eager("_metadata"))
 
     if key:
         query = query.filter(models.AggregateMetadata.key == key)
-    rows = query.all()
+
+    rows = map(lambda x: x[0], query.all())
 
     metadata = collections.defaultdict(set)
     for agg in rows:
         for kv in agg._metadata:
             metadata[kv['key']].add(kv['value'])
     return dict(metadata)
+
 
 
 def aggregate_metadata_get_by_metadata_key(context, aggregate_id, key):
