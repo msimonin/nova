@@ -340,6 +340,7 @@ class InstanceExtra(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("flavorid")
 class InstanceTypes(BASE, NovaBase):
     """Represents possible flavors for instances.
 
