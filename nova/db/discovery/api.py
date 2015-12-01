@@ -4175,6 +4175,7 @@ def _security_group_get_by_names(context, session, project_id, group_names):
         if group_name not in group_names_from_models:
             raise exception.SecurityGroupNotFoundForProject(
                     project_id=project_id, security_group_id=group_name)
+    return sg_models # In rome, security groups can be duplicate :(
     # Not Reached
 
 
