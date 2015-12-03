@@ -5622,14 +5622,39 @@ def aggregate_get_by_host(context, host, key=None):
     query = model_query(context, models.Aggregate)
     query = query.options(joinedload('_hosts'))
     query = query.options(joinedload('_metadata'))
+    query = query.join(models.AggregateHost)
+    query = query.filter(models.AggregateHost.aggregate_id == models.Aggregate.id)
     query = query.join('_hosts')
     query = query.filter(models.AggregateHost.host == host)
 
     if key:
-        query = query.join("_metadata").filter(
-            models.AggregateMetadata.key == key)
-    return query.all()
+        query = query.join(models.AggregateMetadata)
+        query = query.filter(models.AggregateMetadata.key == key)
+        # query = query.join("_metadata").filter(
+        #     models.AggregateMetadata.key == key)
+    rows = map(lambda x: x[0], query.all())
+    return rows
 
+# def aggregate_get_by_host(context, host, key=None):
+#     """Return rows that match host (mandatory) and metadata key (optional).
+
+#     :param host matches host, and is required.
+#     :param key Matches metadata key, if not None.
+#     """
+#     query = model_query(context, models.Aggregate)
+#     # TODO(jonathan): change following to support ROME convention.
+#     query = query.join("_metadata")
+#     query = query.join(models.AggregateMetadata)
+#     query = query.filter(models.AggregateMetadata.key == key)
+#     query = query.join(models.AggregateHost)
+#     # TODO(jonathan): change following to support ROME convention.
+
+#     query = query.filter(models.AggregateHost.host == host)
+
+#     if key:
+#         query = query.join("_metadata").filter(
+#             models.AggregateMetadata.key == key)
+#     return query.all()
 
 def aggregate_metadata_get_by_host(context, host, key=None):
     query = model_query(context, models.Aggregate)
@@ -5696,6 +5721,7 @@ def aggregate_get_by_metadata_key(context, key):
     result = query.all()
     print("[aggregate_get_by_metadata_key] result:%s" % (result))
     processed_result = map(lambda x: x[0], query.all())
+    processed_result = map(lambda x: x.get_complex_ref(), processed_result)
     print("[aggregate_get_by_metadata_key] processed_result:%s" % (processed_result))
     return processed_result
 
