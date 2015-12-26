@@ -417,6 +417,7 @@ class Volume(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("project_id")
 class Quota(BASE, NovaBase):
     """Represents a single quota override for a project.
     If there is no row for a given project id and resource, then the
@@ -464,6 +465,7 @@ class ProjectUserQuota(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("class_name")
 class QuotaClass(BASE, NovaBase):
     """Represents a single quota override for a quota class.
     If there is no row for a given quota class and resource, then the
@@ -794,6 +796,7 @@ class Migration(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("host")
 class Network(BASE, NovaBase):
     """Represents a network."""
     __tablename__ = 'networks'
@@ -848,6 +851,8 @@ class Network(BASE, NovaBase):
 
 @global_scope
 @secondary_index_decorator("instance_uuid")
+@secondary_index_decorator("uuid")
+@secondary_index_decorator("network_id")
 class VirtualInterface(BASE, NovaBase):
     """Represents a virtual interface on an instance."""
     __tablename__ = 'virtual_interfaces'
