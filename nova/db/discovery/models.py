@@ -52,6 +52,7 @@ def MediumText():
 
 @global_scope
 @secondary_index_decorator("host")
+@secondary_index_decorator("topic")
 class Service(BASE, NovaBase):
     """Represents a running service on a host."""
 
@@ -373,6 +374,7 @@ class InstanceTypes(BASE, NovaBase):
 
 
 @global_scope
+@secondary_index_decorator("instance_uuid")
 class Volume(BASE, NovaBase):
     """Represents a block storage device that can be attached to a VM."""
     __tablename__ = 'volumes'
