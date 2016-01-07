@@ -3901,11 +3901,12 @@ def reservation_expire(context):
                                         session=session, read_deleted="no").\
                             filter(models.Reservation.expire < current_time)
 
-        for reservation in reservation_query.join(models.QuotaUsage).all():
+        for row in reservation_query.join(models.QuotaUsage).all():
+            reservation = row[0] if len(row) > 1 else row
             if reservation.delta >= 0:
                 reservation.usage.reserved -= reservation.delta
                 session.add(reservation.usage)
-
+        session.flush()
         reservation_query.soft_delete(synchronize_session=False)
 
 
@@ -5599,7 +5600,7 @@ def aggregate_create(context, values, metadata=None):
 
 
 def aggregate_get(context, aggregate_id):
-    print("[aggregate_get] id:%s" % (aggregate_id))
+    print("[aggregate_get] id:%s (%s)" % (aggregate_id, type(aggregate_id)))
     query = _aggregate_get_query(context,
                                  models.Aggregate,
                                  models.Aggregate.id,
@@ -5682,11 +5683,17 @@ def aggregate_metadata_get_by_host(context, host, key=None):
 
 def aggregate_metadata_get_by_metadata_key(context, aggregate_id, key):
     query = model_query(context, models.Aggregate)
+    # TODO(jonathan): change following to support ROME convention.
     query = query.join("_metadata")
-    query = query.filter(models.Aggregate.id == aggregate_id)
-    query = query.options(contains_eager("_metadata"))
+    query = query.join(models.AggregateMetadata)
     query = query.filter(models.AggregateMetadata.key == key)
-    rows = query.all()
+    query = query.join(models.AggregateHost)
+    # TODO(jonathan): change following to support ROME convention.
+
+    if key:
+        query = query.filter(models.AggregateMetadata.key == key)
+
+    rows = map(lambda x: x[0], query.all())
 
     metadata = collections.defaultdict(set)
     for agg in rows:
@@ -5710,10 +5717,13 @@ def aggregate_get_by_metadata_key(context, key):
     :param key Matches metadata key.
     """
     query = model_query(context, models.Aggregate)
+    print("[aggregate_get_by_metadata_key] (1) result:%s" % (query.all()))
     # TODO(jonathan): change following to support ROME convention.
     # query = query.join("_metadata")
-    query = query.join(models.AggregateMetadata)    
+    query = query.join(models.AggregateMetadata)   
+    print("[aggregate_get_by_metadata_key] (2) result:%s" % (query.all())) 
     query = query.filter(models.AggregateMetadata.key == key)
+    print("[aggregate_get_by_metadata_key] (3) result:%s" % (query.all()))
     query = query.options(contains_eager("_metadata"))
     query = query.options(joinedload("_hosts"))
     # TODO(jonathan): change following to support ROME convention.
