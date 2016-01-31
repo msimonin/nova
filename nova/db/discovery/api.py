@@ -3824,6 +3824,8 @@ def reservation_commit(context, reservations, project_id=None, user_id=None):
             if reservation.delta >= 0:
                 usage.reserved -= reservation.delta
             usage.in_use += reservation.delta
+            # TODO (Jonathan): add a "session.add" to ease the session management :)
+            session.add(usage)
         reservation_query.soft_delete(synchronize_session=False)
 
 
