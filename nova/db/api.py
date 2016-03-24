@@ -34,7 +34,6 @@ from oslo_log import log as logging
 from nova.cells import rpcapi as cells_rpcapi
 from nova.i18n import _LE
 
-
 db_opts = [
     cfg.BoolOpt('enable_new_services',
                 default=True,
@@ -47,16 +46,17 @@ db_opts = [
                help='Template string to be used to generate snapshot names'),
 ]
 
+LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
-_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
+# mega hack
+_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
+#_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 
+CONF.log_opt_values(LOG, logging.DEBUG)
 
 IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
-
-LOG = logging.getLogger(__name__)
-
 # The maximum value a signed INT type may have
 MAX_INT = 0x7FFFFFFF
 
@@ -128,7 +128,10 @@ def service_get_by_host_and_topic(context, host, topic):
 
 def service_get_by_host_and_binary(context, host, binary):
     """Get a service by hostname and binary."""
-    return IMPL.service_get_by_host_and_binary(context, host, binary)
+    print("get by host and binary host = {} binary = {}".format(host, binary))
+    service = IMPL.service_get_by_host_and_binary(context, host, binary)
+    print(service)
+    return service
 
 
 def service_get_all(context, disabled=None):

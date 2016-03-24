@@ -588,6 +588,7 @@ def service_get_by_compute_host(context, host):
 
 @pick_context_manager_writer
 def service_create(context, values):
+    print("creating a service with following properties: %s" % (values))
     service_ref = models.Service()
     service_ref.update(values)
     if not CONF.enable_new_services:
