@@ -1,315 +1,136 @@
-"""Utils module.
+# Copyright (c) 2013 Boris Pavlovic (boris@pavlovic.me).
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
 
-This module contains functions, classes and mix-in that are used for the
-discovery database backend.
+from oslo_db import exception as db_exc
+from oslo_db.sqlalchemy import utils as oslodbutils
+from oslo_log import log as logging
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy import MetaData
+from sqlalchemy.sql.expression import UpdateBase
+from sqlalchemy import Table
+from sqlalchemy.types import NullType
 
-"""
+from nova.db.sqlalchemy import api as db
+from nova import exception
+from nova.i18n import _, _LE
 
-from oslo.db.sqlalchemy import models
-import traceback
-import riak
-import uuid
 
-RIAK_CLIENT = riak.RiakClient(pb_port=8087, protocol='pbc')
+LOG = logging.getLogger(__name__)
 
-def merge_dicts(dict1, dict2):
-    """Merge two dictionnaries into one dictionnary: the values containeds
-    inside dict2 will erase values of dict1."""
-    return dict(dict1.items() + dict2.items())
 
-def find_table_name(model):
+class DeleteFromSelect(UpdateBase):
+    def __init__(self, table, select, column):
+        self.table = table
+        self.select = select
+        self.column = column
 
-    """This function returns the name of the given model as a String. If the
-    model cannot be identified, it returns "none".
-    :param model: a model object candidate
-    :return: the table name or "none" if the object cannot be identified
+
+# NOTE(guochbo): some versions of MySQL doesn't yet support subquery with
+# 'LIMIT & IN/ALL/ANY/SOME' We need work around this with nesting select .
+@compiles(DeleteFromSelect)
+def visit_delete_from_select(element, compiler, **kw):
+    return "DELETE FROM %s WHERE %s in (SELECT T1.%s FROM (%s) as T1)" % (
+        compiler.process(element.table, asfrom=True),
+        compiler.process(element.column),
+        element.column.name,
+        compiler.process(element.select))
+
+
+def check_shadow_table(migrate_engine, table_name):
+    """This method checks that table with ``table_name`` and
+    corresponding shadow table have same columns.
     """
+    meta = MetaData()
+    meta.bind = migrate_engine
 
-    if hasattr(model, "__tablename__"):
-        return model.__tablename__
+    table = Table(table_name, meta, autoload=True)
+    shadow_table = Table(db._SHADOW_TABLE_PREFIX + table_name, meta,
+                         autoload=True)
 
-    if hasattr(model, "table"):
-        return model.table.name
+    columns = {c.name: c for c in table.columns}
+    shadow_columns = {c.name: c for c in shadow_table.columns}
 
-    if hasattr(model, "class_"):
-        return model.class_.__tablename__
+    for name, column in columns.items():
+        if name not in shadow_columns:
+            raise exception.NovaException(
+                _("Missing column %(table)s.%(column)s in shadow table")
+                        % {'column': name, 'table': shadow_table.name})
+        shadow_column = shadow_columns[name]
 
-    if hasattr(model, "clauses"):
-        for clause in model.clauses:
-            return find_table_name(clause)
+        if not isinstance(shadow_column.type, type(column.type)):
+            raise exception.NovaException(
+                _("Different types in %(table)s.%(column)s and shadow table: "
+                  "%(c_type)s %(shadow_c_type)s")
+                        % {'column': name, 'table': table.name,
+                           'c_type': column.type,
+                           'shadow_c_type': shadow_column.type})
 
-    return "none"
+    for name, column in shadow_columns.items():
+        if name not in columns:
+            raise exception.NovaException(
+                _("Extra column %(table)s.%(column)s in shadow table")
+                        % {'column': name, 'table': shadow_table.name})
+    return True
 
-def is_lazyreference(obj):
-    """Check if the given object is a lazy reference to an instance of a
-    NovaBase."""
 
-    value = str(obj)
-    return value.startswith("Lazy(") and value.endswith(")")
+def create_shadow_table(migrate_engine, table_name=None, table=None,
+                        **col_name_col_instance):
+    """This method create shadow table for table with name ``table_name``
+    or table instance ``table``.
+    :param table_name: Autoload table with this name and create shadow table
+    :param table: Autoloaded table, so just create corresponding shadow table.
+    :param col_name_col_instance:   contains pair column_name=column_instance.
+    column_instance is instance of Column. These params are required only for
+    columns that have unsupported types by sqlite. For example BigInteger.
+    :returns: The created shadow_table object.
+    """
+    meta = MetaData(bind=migrate_engine)
 
-def is_novabase(obj):
-    """Check if the given object is an instance of a NovaBase."""
+    if table_name is None and table is None:
+        raise exception.NovaException(_("Specify `table_name` or `table` "
+                                        "param"))
+    if not (table_name is None or table is None):
+        raise exception.NovaException(_("Specify only one param `table_name` "
+                                        "`table`"))
 
-    try:
-        found_table_name = find_table_name(obj.__class__) is not "none"
-        is_lazy = is_lazyreference(obj)
-        return found_table_name or is_lazy
-    except:
-        pass
+    if table is None:
+        table = Table(table_name, meta, autoload=True)
 
-    return False
-
-def get_single_object(tablename, id, desimplify=True, request_uuid=None):
-
-    try:
-        from desimplifier import ObjectDesimplifier
-    except:
-        pass
-
-    if isinstance(id, int):
-        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
-
-        object_bucket = RIAK_CLIENT.bucket(tablename)
-
-        key = "%d" % (id)
-        value = object_bucket.get(key)
-
-        if desimplify:
-            try:
-                model_object = object_desimplifier.desimplify(value.data)
-                return model_object
-            except Exception as e:
-                traceback.print_exc()
-                return None
+    columns = []
+    for column in table.columns:
+        if isinstance(column.type, NullType):
+            new_column = oslodbutils._get_not_supported_column(
+                col_name_col_instance, column.name)
+            columns.append(new_column)
         else:
-            return value.data
-    else:
-        return None
+            columns.append(column.copy())
 
-def get_objects(tablename, desimplify=True, request_uuid=None):
-
-    key_index_bucket = RIAK_CLIENT.bucket("key_index")
-    fetched = key_index_bucket.get(tablename)
-    keys = fetched.data
-
-    result = []
-    if keys != None:
-        for key in keys:
-            try:
-                key_as_string = "%d" % (key)
-
-                model_object = get_single_object(
-                    tablename,
-                    key,
-                    desimplify,
-                    request_uuid
-                )
-
-                result += [model_object]
-            except Exception as ex:
-                print("problem with key: %s" % (key))
-                traceback.print_exc()
-                pass
-
-    return result
-
-def get_models_satisfying(tablename, field, value, request_uuid=None):
-
-    candidates = get_objects(tablename, False, request_uuid=request_uuid)
-    result = []
-    for each in candidates:
-        if each[field] == value:
-            result += [each]
-    return result
-
-class RelationshipModel(object):
-    """Class that will ease the representation of relationships: a can
-    be represented either through a foreign key value or a foreign
-    object."""
-
-    def __init__(self, local_fk_field, local_fk_value, local_object_field, local_object_value, remote_object_field, remote_object_tablename, is_list):
-        """Constructor"""
-
-        self.local_fk_field = local_fk_field
-        self.local_object_field = local_object_field
-        self.remote_object_field = remote_object_field
-        self.local_fk_value = local_fk_value
-        self.local_object_value = local_object_value
-        self.remote_object_tablename = remote_object_tablename
-        self.is_list = is_list
-
-    def __unicode__(self):
-        return "{local_fk_field: %s, local_fk_value: %s} <--> {local_object_field:%s, remote_object_field:%s, local_object_value:%s, remote_object_tablename:%s, is_list:%s}" % (
-            self.local_fk_field,
-            self.local_fk_value,
-            self.local_object_field,
-            self.remote_object_field,
-            self.local_object_value,
-            self.remote_object_tablename,
-            self.is_list
-        )
-
-    def __str__(self):
-        return self.__unicode__()
-
-class ReloadableRelationMixin(models.ModelBase):
-    """Mixin that contains several methods that will be in charge of enabling
-    NovaBase instances to reload default values and relationships."""
-
-    def reload_default_values(self):
-        """Reload the default values of un-setted fields that."""
-
-        for field in self._sa_class_manager:
-            state = self._sa_instance_state
-            field_value = getattr(self, field)
-            if field_value is None:
-                try:
-                    field_column = state.mapper._props[field].columns[0]
-                    field_name = field_column.name
-                    field_default_value = field_column.default.arg
-                    if not "function" in str(type(field_default_value)):
-                        setattr(field_name, field_default_value)
-                except:
-                    pass
-
-    def get_relationships(obj):
-        result = []
-
-        state = obj._sa_instance_state
-
-        for field in obj._sa_class_manager:
-            field_object = obj._sa_class_manager[field]
-            field_column = state.mapper._props[field]
-
-            contain_comparator = hasattr(field_object, "comparator")
-            is_relationship = ("relationship" in str(field_object.comparator)
-                if contain_comparator else False
-            )
-            if is_relationship:
-                remote_local_pair = field_object.property.local_remote_pairs[0]
-
-                local_fk_field = remote_local_pair[0].name
-                local_fk_value = getattr(obj, local_fk_field)
-                local_object_field = field
-                local_object_value = getattr(obj, local_object_field)
-                remote_object_field = remote_local_pair[1].name
-                remote_object_tablename = str(remote_local_pair[1].table)
-                is_list = field_object.property.uselist
-
-                result += [RelationshipModel(
-                    local_fk_field,
-                    local_fk_value,
-                    local_object_field,
-                    local_object_value,
-                    remote_object_field,
-                    remote_object_tablename,
-                    is_list
-                )]
-
-        return result
-
-    def update_foreign_keys(self, request_uuid=uuid.uuid1()):
-        """Update foreign keys according to local fields' values."""
-
-        from lazy_reference import LazyReference
-
-        if hasattr(self, "metadata"):
-            metadata = self.metadata
-            tablename = self.__tablename__
-
-            if metadata and tablename in metadata.tables:
-                for fk in metadata.tables[tablename].foreign_keys:
-                    local_field_name = str(fk.parent).split(".")[-1]
-                    remote_table_name = fk._colspec.split(".")[-2]
-                    remote_field_name = fk._colspec.split(".")[-1]
-
-                    if hasattr(self, remote_table_name):
-                        pass
-                    else:
-                        """Remove the "s" at the end of the tablename"""
-                        remote_table_name = remote_table_name[:-1]
-                        pass
-
-                    try:
-                        remote_object = getattr(self, remote_table_name)
-                        remote_field_value = getattr(
-                            remote_object,
-                            remote_field_name
-                        )
-                        setattr(self, local_field_name, remote_field_value)
-                    except Exception as e:
-                        pass
-        try:
-            from desimplifier import ObjectDesimplifier
-        except:
-            pass
-
-        object_desimplifier = ObjectDesimplifier(request_uuid=request_uuid)
-        for each in self.get_relationships():
-            if each.local_fk_value is None and each.local_object_value is None:
-                continue
-
-            if not each.local_fk_value is None:
-                if each.remote_object_field is "id":
-
-                    remote_ref = LazyReference(
-                        each.remote_object_tablename,
-                        each.local_fk_value,
-                        request_uuid,
-                        object_desimplifier
-                    )
-                    setattr(self, each.local_object_field, remote_ref)
-                else:
-                    # dirty fix (grid'5000 debugging)
-                    if self.__tablename__ == "services":
-                        pass
-                    else:
-                        continue
-                    candidates = get_models_satisfying(
-                        each.remote_object_tablename,
-                        each.remote_object_field,
-                        each.local_fk_value,
-                        request_uuid=request_uuid
-                    )
-
-                    lazy_candidates = []
-                    for cand in candidates:
-                        ref = LazyReference(
-                            cand["nova_classname"],
-                            cand["id"],
-                            request_uuid,
-                            object_desimplifier
-                        )
-                        lazy_candidates += [ref]
-                    if not each.is_list:
-                        if len(lazy_candidates) is 0:
-                            print(("could not find an accurate candidate"
-                            " for (%s, %s) in %s") % (
-                                each.remote_object_tablename,
-                                each.remote_object_field,
-                                each.local_fk_value
-                            ))
-                        else:
-                            setattr(
-                                self,
-                                each.local_object_field,
-                                lazy_candidates[0]
-                            )
-                            pass
-                    else:
-                        setattr(
-                            self,
-                            each.local_object_field,
-                            lazy_candidates
-                        )
-                        # for cand in lazy_candidates:
-                        #     setattr(
-                        #         cand,
-                        #         each.remote_object_field,
-                        #         each.local_fk_value
-                        #     )
-                        #     pass
-
-                        # print("   * %s@%s -> rel(%s)" % (str(self.id), str(self.__tablename__), each))
-                        pass
-
+    shadow_table_name = db._SHADOW_TABLE_PREFIX + table.name
+    shadow_table = Table(shadow_table_name, meta, *columns,
+                         mysql_engine='InnoDB')
+    try:
+        shadow_table.create()
+        return shadow_table
+    except (db_exc.DBError, OperationalError):
+        # NOTE(ekudryashova): At the moment there is a case in oslo.db code,
+        # which raises unwrapped OperationalError, so we should catch it until
+        # oslo.db would wraps all such exceptions
+        LOG.info(repr(shadow_table))
+        LOG.exception(_LE('Exception while creating table.'))
+        raise exception.ShadowTableExists(name=shadow_table_name)
+    except Exception:
+        LOG.info(repr(shadow_table))
+        LOG.exception(_LE('Exception while creating table.'))

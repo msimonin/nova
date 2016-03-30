@@ -55,8 +55,10 @@ from nova.compute import task_states
 from nova.compute import vm_states
 from nova import context
 from nova import db
-from nova.db.sqlalchemy import api as sqlalchemy_api
-from nova.db.sqlalchemy import models
+# from nova.db.sqlalchemy import api as sqlalchemy_api
+# from nova.db.sqlalchemy import models
+from nova.db.discovery import api as sqlalchemy_api
+from nova.db.discovery import models
 from nova.db.sqlalchemy import types as col_types
 from nova.db.sqlalchemy import utils as db_utils
 from nova import exception
