@@ -69,6 +69,18 @@ from nova.objects import fields
 from nova import quota
 from nova import safe_utils
 
+def to_list(x, default=None):
+    if x is None:
+        return default
+    if not isinstance(x, collections.Iterable) or \
+            isinstance(x, six.string_types):
+        return [x]
+    elif isinstance(x, list):
+        return x
+    else:
+        return list(x)
+
+
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',
                default='',
@@ -181,7 +193,16 @@ from nova.context import RequestContext
 import functools
 
 class RomeTransactionContext():
-    def __init__(self, mode=None):
+    def __init__(self, user_id=None, project_id=None,
+                 is_admin=None, read_deleted="no",
+                 roles=None, remote_address=None, timestamp=None,
+                 request_id=None, auth_token=None, overwrite=True,
+                 quota_class=None, user_name=None, project_name=None,
+                 service_catalog=None, instance_lock_checked=False,
+                 user_auth_plugin=None, mode=None, **kwargs):
+        self.is_admin = is_admin if is_admin else False
+        self.user_id = user_id
+        self.project_id = project_id
         if not mode:
             self.writer = RomeTransactionContext(mode="writer")
             self.reader = RomeTransactionContext(mode="reader")
@@ -2337,24 +2358,26 @@ def instance_get_all_by_filters_sort(context, filters, limit=None, marker=None,
                                 filters, exact_match_filter_names)
     if query_prefix is None:
         return []
-    query_prefix = _regex_instance_filter(query_prefix, filters)
-    query_prefix = _tag_instance_filter(context, query_prefix, filters)
 
-    # paginate query
-    if marker is not None:
-        try:
-            marker = _instance_get_by_uuid(
-                    context.elevated(read_deleted='yes'), marker)
-        except exception.InstanceNotFound:
-            raise exception.MarkerNotFound(marker)
-    try:
-        query_prefix = sqlalchemyutils.paginate_query(query_prefix,
-                               models.Instance, limit,
-                               sort_keys,
-                               marker=marker,
-                               sort_dirs=sort_dirs)
-    except db_exc.InvalidSortKey:
-        raise exception.InvalidSortKey()
+    print("ici?")
+    # query_prefix = _regex_instance_filter(query_prefix, filters)
+    # query_prefix = _tag_instance_filter(context, query_prefix, filters)
+    #
+    # # paginate query
+    # if marker is not None:
+    #     try:
+    #         marker = _instance_get_by_uuid(
+    #                 context.elevated(read_deleted='yes'), marker)
+    #     except exception.InstanceNotFound:
+    #         raise exception.MarkerNotFound(marker)
+    # try:
+    #     query_prefix = sqlalchemyutils.paginate_query(query_prefix,
+    #                            models.Instance, limit,
+    #                            sort_keys,
+    #                            marker=marker,
+    #                            sort_dirs=sort_dirs)
+    # except db_exc.InvalidSortKey:
+    #     raise exception.InvalidSortKey()
 
     return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
 
@@ -2804,7 +2827,7 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
         expected = {}
     else:
         # Coerce all single values to singleton lists
-        expected = {k: [None] if v is None else sqlalchemyutils.to_list(v)
+        expected = {k: [None] if v is None else to_list(v)
                        for (k, v) in six.iteritems(expected)}
 
     # Extract 'expected_' values from values dict, as these aren't actually
@@ -2817,7 +2840,7 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
             if value is None:
                 expected[field] = [None]
             else:
-                expected[field] = sqlalchemyutils.to_list(value)
+                expected[field] = to_list(value)
 
     # Values which need to be updated separately
     metadata = values.pop('metadata', None)
