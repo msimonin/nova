@@ -203,6 +203,7 @@ class RomeTransactionContext():
         self.is_admin = is_admin if is_admin else False
         self.user_id = user_id
         self.project_id = project_id
+        self.read_deleted = read_deleted
         if not mode:
             self.writer = RomeTransactionContext(mode="writer")
             self.reader = RomeTransactionContext(mode="reader")
@@ -449,10 +450,56 @@ from collections import namedtuple
 import random
 
 # TODO: modified model_query
-def model_query(context, *args, **kwargs):
-    # base_model = kwargs["base_model"]
-    # models = args
-    return RomeQuery(*args, **kwargs)
+def model_query(context, model,
+                args=None,
+                read_deleted=None,
+                project_only=False):
+    """Query helper that accounts for context's `read_deleted` field.
+
+    :param context:     NovaContext of the query.
+    :param model:       Model to query. Must be a subclass of ModelBase.
+    :param args:        Arguments to query. If None - model is used.
+    :param read_deleted: If not None, overrides context's read_deleted field.
+                        Permitted values are 'no', which does not return
+                        deleted values; 'only', which only returns deleted
+                        values; and 'yes', which does not filter deleted
+                        values.
+    :param project_only: If set and context is user-type, then restrict
+                        query to match the context's project_id. If set to
+                        'allow_none', restriction includes project_id = None.
+    """
+
+    if read_deleted is None:
+        read_deleted = "no"
+
+    query = RomeQuery(model, context.session, args)
+
+    query_kwargs = {}
+    if 'no' == read_deleted:
+        query_kwargs['deleted'] = 0
+        query = query.filter_by(deleted=0)
+    elif 'only' == read_deleted:
+        query_kwargs['deleted'] = 1
+        query = query.filter_by(deleted=1)
+    elif 'yes' == read_deleted:
+        pass
+    else:
+        raise ValueError(_("Unrecognized read_deleted value '%s'")
+                           % read_deleted)
+    rows = query.all()
+    print(rows)
+
+    # We can't use oslo.db model_query's project_id here, as it doesn't allow
+    # us to return both our projects and unowned projects.
+    if nova.context.is_user_context(context) and project_only:
+        if project_only == 'allow_none':
+            query = query.\
+                filter(or_(model.project_id == context.project_id,
+                           model.project_id == null()))
+        else:
+            query = query.filter_by(project_id=context.project_id)
+
+    return query
 
 def convert_objects_related_datetimes(values, *datetime_keys):
     if not datetime_keys:

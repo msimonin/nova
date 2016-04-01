@@ -157,7 +157,7 @@ class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
 
     def tearDown(self):
         "Hook method for deconstructing the test fixture after testing it."
-        classes = [models.Instance, models.InstanceSystemMetadata, models.InstanceMetadata]
+        classes = [models.Instance, models.InstanceSystemMetadata, models.InstanceMetadata, models.InstanceFault]
         for c in classes:
             for o in Query(c).all():
                 o.delete()
