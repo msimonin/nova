@@ -2408,8 +2408,8 @@ def instance_get_all_by_filters_sort(context, filters, limit=None, marker=None,
 
     print("ici?")
     # query_prefix = _regex_instance_filter(query_prefix, filters)
-    # query_prefix = _tag_instance_filter(context, query_prefix, filters)
-    #
+    query_prefix = _tag_instance_filter(context, query_prefix, filters)
+
     # # paginate query
     # if marker is not None:
     #     try:
@@ -2564,9 +2564,25 @@ def _exact_instance_filter(query, filters, legal_keys):
                         query = query.filter(column_attr.any(value=v))
 
             else:
+                metadata_class = None
+                if key == "metadata":
+                    metadata_class=models.InstanceMetadata
+                if key == "system_metadata":
+                    metadata_class = models.InstanceSystemMetadata
+                already_in_models=False
+                for model in query._models:
+                    if model._model == metadata_class:
+                        already_in_models=True
+                if not already_in_models:
+                    query = query.join(metadata_class)
+                    for model in query._models:
+                        if model._model == metadata_class:
+                            model.is_hidden=True
+                key_attribute = metadata_class.key
+                value_attribute = metadata_class.value
                 for k, v in value.items():
-                    query = query.filter(column_attr.any(key=k))
-                    query = query.filter(column_attr.any(value=v))
+                    query = query.filter(key_attribute == k)
+                    query = query.filter(value_attribute == v)
         elif isinstance(value, (list, tuple, set, frozenset)):
             if not value:
                 return None  # empty IN-predicate; short circuit

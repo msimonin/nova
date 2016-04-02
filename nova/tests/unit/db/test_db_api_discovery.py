@@ -180,7 +180,8 @@ class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
             context = self.ctxt
         args = self.sample_data.copy()
         args.update(kwargs)
-        return db.instance_create(context, args)
+        instance = db.instance_create(context, args)
+        return instance
 
     # def test_instance_create(self):
     #     instance = self.create_instance_with_args()
