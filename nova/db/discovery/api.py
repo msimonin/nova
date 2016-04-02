@@ -2853,10 +2853,12 @@ def instance_update_and_get_original(context, instance_uuid, values,
                 pass
     updated_instance_ref = _instance_update(
         context, instance_uuid, values, expected, original=instance_ref)
-    if 'metadata' not in columns_to_join:
-        updated_instance_ref.metadata = []
-    if 'system_metadata' not in columns_to_join:
-        updated_instance_ref.system_metadata = []
+
+    if columns_to_join:
+        if 'metadata' not in columns_to_join:
+            updated_instance_ref.metadata = []
+        if 'system_metadata' not in columns_to_join:
+            updated_instance_ref.system_metadata = []
     return (instance_ref, updated_instance_ref)
 
 
