@@ -2844,8 +2844,20 @@ def instance_update_and_get_original(context, instance_uuid, values,
     """
     instance_ref = _instance_get_by_uuid(context, instance_uuid,
                                          columns_to_join=columns_to_join)
-    return (copy.copy(instance_ref), _instance_update(
-        context, instance_uuid, values, expected, original=instance_ref))
+    instance_ref_copy = models.Instance()
+    for key in instance_ref.to_dict():
+        if instance_ref[key] is not None:
+            try:
+                instance_ref_copy[key] = copy.copy(instance_ref[key])
+            except Exception as e:
+                pass
+    updated_instance_ref = _instance_update(
+        context, instance_uuid, values, expected, original=instance_ref)
+    if 'metadata' not in columns_to_join:
+        updated_instance_ref.metadata = []
+    if 'system_metadata' not in columns_to_join:
+        updated_instance_ref.system_metadata = []
+    return (instance_ref, updated_instance_ref)
 
 
 # NOTE(danms): This updates the instance's metadata list in-place and in
