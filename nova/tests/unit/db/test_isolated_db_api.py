@@ -914,385 +914,385 @@ class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
     #     self.assertEqual(meta, self.sample_data['metadata'])
     #     sys_meta = utils.metadata_to_dict(new_ref['system_metadata'])
     #     self.assertEqual(sys_meta, {})
+
+    # def test_instance_update_and_get_original_metadata_none_join(self):
+    #     instance = self.create_instance_with_args()
+    #     (old_ref, new_ref) = db.instance_update_and_get_original(
+    #         self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
+    #     meta = utils.metadata_to_dict(new_ref['metadata'])
+    #     self.assertEqual(meta, {'mk1': 'mv3'})
     #
-    # # def test_instance_update_and_get_original_metadata_none_join(self):
-    # #     instance = self.create_instance_with_args()
-    # #     (old_ref, new_ref) = db.instance_update_and_get_original(
-    # #         self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
-    # #     meta = utils.metadata_to_dict(new_ref['metadata'])
-    # #     self.assertEqual(meta, {'mk1': 'mv3'})
-    # #
-    # # def test_instance_update_and_get_original_no_conflict_on_session(self):
-    # #     with sqlalchemy_api.main_context_manager.writer.using(self.ctxt):
-    # #         instance = self.create_instance_with_args()
-    # #         (old_ref, new_ref) = db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
-    # #
-    # #         # test some regular persisted fields
-    # #         self.assertEqual(old_ref.uuid, new_ref.uuid)
-    # #         self.assertEqual(old_ref.project_id, new_ref.project_id)
-    # #
-    # #         # after a copy operation, we can assert:
-    # #
-    # #         # 1. the two states have their own InstanceState
-    # #         old_insp = inspect(old_ref)
-    # #         new_insp = inspect(new_ref)
-    # #         self.assertNotEqual(old_insp, new_insp)
-    # #
-    # #         # 2. only one of the objects is still in our Session
-    # #         self.assertIs(new_insp.session, self.ctxt.session)
-    # #         self.assertIsNone(old_insp.session)
-    # #
-    # #         # 3. The "new" object remains persistent and ready
-    # #         # for updates
-    # #         self.assertTrue(new_insp.persistent)
-    # #
-    # #         # 4. the "old" object is detached from this Session.
-    # #         self.assertTrue(old_insp.detached)
-    # #
-    # # def test_instance_update_and_get_original_conflict_race(self):
-    # #     # Ensure that we retry if update_on_match fails for no discernable
-    # #     # reason
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     orig_update_on_match = update_match.update_on_match
-    # #
-    # #     # Reproduce the conditions of a race between fetching and updating the
-    # #     # instance by making update_on_match fail for no discernable reason the
-    # #     # first time it is called, but work normally the second time.
-    # #     with mock.patch.object(update_match, 'update_on_match',
-    # #                     side_effect=[update_match.NoRowsMatched,
-    # #                                  orig_update_on_match]):
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
-    # #         self.assertEqual(update_match.update_on_match.call_count, 2)
-    # #
-    # # def test_instance_update_and_get_original_conflict_race_fallthrough(self):
-    # #     # Ensure that is update_match continuously fails for no discernable
-    # #     # reason, we evantually raise UnknownInstanceUpdateConflict
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     # Reproduce the conditions of a race between fetching and updating the
-    # #     # instance by making update_on_match fail for no discernable reason.
-    # #     with mock.patch.object(update_match, 'update_on_match',
-    # #                     side_effect=update_match.NoRowsMatched):
-    # #         self.assertRaises(exception.UnknownInstanceUpdateConflict,
-    # #                           db.instance_update_and_get_original,
-    # #                           self.ctxt,
-    # #                           instance['uuid'],
-    # #                           {'metadata': {'mk1': 'mv3'}})
-    # #
-    # # def test_instance_update_and_get_original_expected_host(self):
-    # #     # Ensure that we allow update when expecting a host field
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     (orig, new) = db.instance_update_and_get_original(
-    # #         self.ctxt, instance['uuid'], {'host': None},
-    # #         expected={'host': 'h1'})
-    # #
-    # #     self.assertIsNone(new['host'])
-    # #
-    # # def test_instance_update_and_get_original_expected_host_fail(self):
-    # #     # Ensure that we detect a changed expected host and raise
-    # #     # InstanceUpdateConflict
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     try:
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {'host': None},
-    # #             expected={'host': 'h2'})
-    # #     except exception.InstanceUpdateConflict as ex:
-    # #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
-    # #         self.assertEqual(ex.kwargs['actual'], {'host': 'h1'})
-    # #         self.assertEqual(ex.kwargs['expected'], {'host': ['h2']})
-    # #     else:
-    # #         self.fail('InstanceUpdateConflict was not raised')
-    # #
-    # # def test_instance_update_and_get_original_expected_host_none(self):
-    # #     # Ensure that we allow update when expecting a host field of None
-    # #     instance = self.create_instance_with_args(host=None)
-    # #
-    # #     (old, new) = db.instance_update_and_get_original(
-    # #         self.ctxt, instance['uuid'], {'host': 'h1'},
-    # #         expected={'host': None})
-    # #     self.assertEqual('h1', new['host'])
-    # #
-    # # def test_instance_update_and_get_original_expected_host_none_fail(self):
-    # #     # Ensure that we detect a changed expected host of None and raise
-    # #     # InstanceUpdateConflict
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     try:
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {'host': None},
-    # #             expected={'host': None})
-    # #     except exception.InstanceUpdateConflict as ex:
-    # #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
-    # #         self.assertEqual(ex.kwargs['actual'], {'host': 'h1'})
-    # #         self.assertEqual(ex.kwargs['expected'], {'host': [None]})
-    # #     else:
-    # #         self.fail('InstanceUpdateConflict was not raised')
-    # #
-    # # def test_instance_update_and_get_original_expected_task_state_single_fail(self):  # noqa
-    # #     # Ensure that we detect a changed expected task and raise
-    # #     # UnexpectedTaskStateError
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     try:
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {
-    # #                 'host': None,
-    # #                 'expected_task_state': task_states.SCHEDULING
-    # #             })
-    # #     except exception.UnexpectedTaskStateError as ex:
-    # #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
-    # #         self.assertEqual(ex.kwargs['actual'], {'task_state': None})
-    # #         self.assertEqual(ex.kwargs['expected'],
-    # #                          {'task_state': [task_states.SCHEDULING]})
-    # #     else:
-    # #         self.fail('UnexpectedTaskStateError was not raised')
-    # #
-    # # def test_instance_update_and_get_original_expected_task_state_single_pass(self):  # noqa
-    # #     # Ensure that we allow an update when expected task is correct
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     (orig, new) = db.instance_update_and_get_original(
-    # #         self.ctxt, instance['uuid'], {
-    # #             'host': None,
-    # #             'expected_task_state': None
-    # #         })
-    # #     self.assertIsNone(new['host'])
-    # #
-    # # def test_instance_update_and_get_original_expected_task_state_multi_fail(self):  # noqa
-    # #     # Ensure that we detect a changed expected task and raise
-    # #     # UnexpectedTaskStateError when there are multiple potential expected
-    # #     # tasks
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     try:
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {
-    # #                 'host': None,
-    # #                 'expected_task_state': [task_states.SCHEDULING,
-    # #                                         task_states.REBUILDING]
-    # #             })
-    # #     except exception.UnexpectedTaskStateError as ex:
-    # #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
-    # #         self.assertEqual(ex.kwargs['actual'], {'task_state': None})
-    # #         self.assertEqual(ex.kwargs['expected'],
-    # #                          {'task_state': [task_states.SCHEDULING,
-    # #                                           task_states.REBUILDING]})
-    # #     else:
-    # #         self.fail('UnexpectedTaskStateError was not raised')
-    # #
-    # # def test_instance_update_and_get_original_expected_task_state_multi_pass(self):  # noqa
-    # #     # Ensure that we allow an update when expected task is in a list of
-    # #     # expected tasks
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     (orig, new) = db.instance_update_and_get_original(
-    # #         self.ctxt, instance['uuid'], {
-    # #             'host': None,
-    # #             'expected_task_state': [task_states.SCHEDULING, None]
-    # #         })
-    # #     self.assertIsNone(new['host'])
-    # #
-    # # def test_instance_update_and_get_original_expected_task_state_deleting(self):  # noqa
-    # #     # Ensure that we raise UnepectedDeletingTaskStateError when task state
-    # #     # is not as expected, and it is DELETING
-    # #     instance = self.create_instance_with_args(
-    # #         task_state=task_states.DELETING)
-    # #
-    # #     try:
-    # #         db.instance_update_and_get_original(
-    # #             self.ctxt, instance['uuid'], {
-    # #                 'host': None,
-    # #                 'expected_task_state': task_states.SCHEDULING
-    # #             })
-    # #     except exception.UnexpectedDeletingTaskStateError as ex:
-    # #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
-    # #         self.assertEqual(ex.kwargs['actual'],
-    # #                          {'task_state': task_states.DELETING})
-    # #         self.assertEqual(ex.kwargs['expected'],
-    # #                          {'task_state': [task_states.SCHEDULING]})
-    # #     else:
-    # #         self.fail('UnexpectedDeletingTaskStateError was not raised')
+    # def test_instance_update_and_get_original_no_conflict_on_session(self):
+    #     with sqlalchemy_api.main_context_manager.writer.using(self.ctxt):
+    #         instance = self.create_instance_with_args()
+    #         (old_ref, new_ref) = db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
     #
-    # # def test_instance_update_unique_name(self):
-    # #     context1 = context.RequestContext('user1', 'p1')
-    # #     context2 = context.RequestContext('user2', 'p2')
-    # #
-    # #     inst1 = self.create_instance_with_args(context=context1,
-    # #                                            project_id='p1',
-    # #                                            hostname='fake_name1')
-    # #     inst2 = self.create_instance_with_args(context=context1,
-    # #                                            project_id='p1',
-    # #                                            hostname='fake_name2')
-    # #     inst3 = self.create_instance_with_args(context=context2,
-    # #                                            project_id='p2',
-    # #                                            hostname='fake_name3')
-    # #     # osapi_compute_unique_server_name_scope is unset so this should work:
-    # #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_name2'})
-    # #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_name1'})
-    # #
-    # #     # With scope 'global' any duplicate should fail.
-    # #     self.flags(osapi_compute_unique_server_name_scope='global')
-    # #     self.assertRaises(exception.InstanceExists,
-    # #                       db.instance_update,
-    # #                       context1,
-    # #                       inst2['uuid'],
-    # #                       {'hostname': 'fake_name1'})
-    # #     self.assertRaises(exception.InstanceExists,
-    # #                       db.instance_update,
-    # #                       context2,
-    # #                       inst3['uuid'],
-    # #                       {'hostname': 'fake_name1'})
-    # #     # But we should definitely be able to update our name if we aren't
-    # #     #  really changing it.
-    # #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_NAME'})
-    # #
-    # #     # With scope 'project' a duplicate in the project should fail:
-    # #     self.flags(osapi_compute_unique_server_name_scope='project')
-    # #     self.assertRaises(exception.InstanceExists, db.instance_update,
-    # #                       context1, inst2['uuid'], {'hostname': 'fake_NAME'})
-    # #
-    # #     # With scope 'project' a duplicate in a different project should work:
-    # #     self.flags(osapi_compute_unique_server_name_scope='project')
-    # #     db.instance_update(context2, inst3['uuid'], {'hostname': 'fake_NAME'})
+    #         # test some regular persisted fields
+    #         self.assertEqual(old_ref.uuid, new_ref.uuid)
+    #         self.assertEqual(old_ref.project_id, new_ref.project_id)
     #
-    # # def _test_instance_update_updates_metadata(self, metadata_type):
-    # #     instance = self.create_instance_with_args()
-    # #
-    # #     def set_and_check(meta):
-    # #         inst = db.instance_update(self.ctxt, instance['uuid'],
-    # #                            {metadata_type: dict(meta)})
-    # #         _meta = utils.metadata_to_dict(inst[metadata_type])
-    # #         self.assertEqual(meta, _meta)
-    # #
-    # #     meta = {'speed': '88', 'units': 'MPH'}
-    # #     set_and_check(meta)
-    # #     meta['gigawatts'] = '1.21'
-    # #     set_and_check(meta)
-    # #     del meta['gigawatts']
-    # #     set_and_check(meta)
-    # #     self.ctxt.read_deleted = 'yes'
-    # #     self.assertNotIn('gigawatts',
-    # #         db.instance_system_metadata_get(self.ctxt, instance.uuid))
-    # #
-    # # def test_security_group_in_use(self):
-    # #     db.instance_create(self.ctxt, dict(host='foo'))
-    # #
-    # # def test_instance_update_updates_system_metadata(self):
-    # #     # Ensure that system_metadata is updated during instance_update
-    # #     self._test_instance_update_updates_metadata('system_metadata')
-    # #
-    # # def test_instance_update_updates_metadata(self):
-    # #     # Ensure that metadata is updated during instance_update
-    # #     self._test_instance_update_updates_metadata('metadata')
-    # #
-    # # def test_instance_floating_address_get_all(self):
+    #         # after a copy operation, we can assert:
+    #
+    #         # 1. the two states have their own InstanceState
+    #         old_insp = inspect(old_ref)
+    #         new_insp = inspect(new_ref)
+    #         self.assertNotEqual(old_insp, new_insp)
+    #
+    #         # 2. only one of the objects is still in our Session
+    #         self.assertIs(new_insp.session, self.ctxt.session)
+    #         self.assertIsNone(old_insp.session)
+    #
+    #         # 3. The "new" object remains persistent and ready
+    #         # for updates
+    #         self.assertTrue(new_insp.persistent)
+    #
+    #         # 4. the "old" object is detached from this Session.
+    #         self.assertTrue(old_insp.detached)
+    #
+    # def test_instance_update_and_get_original_conflict_race(self):
+    #     # Ensure that we retry if update_on_match fails for no discernable
+    #     # reason
+    #     instance = self.create_instance_with_args()
+    #
+    #     orig_update_on_match = update_match.update_on_match
+    #
+    #     # Reproduce the conditions of a race between fetching and updating the
+    #     # instance by making update_on_match fail for no discernable reason the
+    #     # first time it is called, but work normally the second time.
+    #     with mock.patch.object(update_match, 'update_on_match',
+    #                     side_effect=[update_match.NoRowsMatched,
+    #                                  orig_update_on_match]):
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {'metadata': {'mk1': 'mv3'}})
+    #         self.assertEqual(update_match.update_on_match.call_count, 2)
+    #
+    # def test_instance_update_and_get_original_conflict_race_fallthrough(self):
+    #     # Ensure that is update_match continuously fails for no discernable
+    #     # reason, we evantually raise UnknownInstanceUpdateConflict
+    #     instance = self.create_instance_with_args()
+    #
+    #     # Reproduce the conditions of a race between fetching and updating the
+    #     # instance by making update_on_match fail for no discernable reason.
+    #     with mock.patch.object(update_match, 'update_on_match',
+    #                     side_effect=update_match.NoRowsMatched):
+    #         self.assertRaises(exception.UnknownInstanceUpdateConflict,
+    #                           db.instance_update_and_get_original,
+    #                           self.ctxt,
+    #                           instance['uuid'],
+    #                           {'metadata': {'mk1': 'mv3'}})
+    #
+    # def test_instance_update_and_get_original_expected_host(self):
+    #     # Ensure that we allow update when expecting a host field
+    #     instance = self.create_instance_with_args()
+    #
+    #     (orig, new) = db.instance_update_and_get_original(
+    #         self.ctxt, instance['uuid'], {'host': None},
+    #         expected={'host': 'h1'})
+    #
+    #     self.assertIsNone(new['host'])
+    #
+    # def test_instance_update_and_get_original_expected_host_fail(self):
+    #     # Ensure that we detect a changed expected host and raise
+    #     # InstanceUpdateConflict
+    #     instance = self.create_instance_with_args()
+    #
+    #     try:
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {'host': None},
+    #             expected={'host': 'h2'})
+    #     except exception.InstanceUpdateConflict as ex:
+    #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
+    #         self.assertEqual(ex.kwargs['actual'], {'host': 'h1'})
+    #         self.assertEqual(ex.kwargs['expected'], {'host': ['h2']})
+    #     else:
+    #         self.fail('InstanceUpdateConflict was not raised')
+    #
+    # def test_instance_update_and_get_original_expected_host_none(self):
+    #     # Ensure that we allow update when expecting a host field of None
+    #     instance = self.create_instance_with_args(host=None)
+    #
+    #     (old, new) = db.instance_update_and_get_original(
+    #         self.ctxt, instance['uuid'], {'host': 'h1'},
+    #         expected={'host': None})
+    #     self.assertEqual('h1', new['host'])
+    #
+    # def test_instance_update_and_get_original_expected_host_none_fail(self):
+    #     # Ensure that we detect a changed expected host of None and raise
+    #     # InstanceUpdateConflict
+    #     instance = self.create_instance_with_args()
+    #
+    #     try:
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {'host': None},
+    #             expected={'host': None})
+    #     except exception.InstanceUpdateConflict as ex:
+    #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
+    #         self.assertEqual(ex.kwargs['actual'], {'host': 'h1'})
+    #         self.assertEqual(ex.kwargs['expected'], {'host': [None]})
+    #     else:
+    #         self.fail('InstanceUpdateConflict was not raised')
+    #
+    # def test_instance_update_and_get_original_expected_task_state_single_fail(self):  # noqa
+    #     # Ensure that we detect a changed expected task and raise
+    #     # UnexpectedTaskStateError
+    #     instance = self.create_instance_with_args()
+    #
+    #     try:
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {
+    #                 'host': None,
+    #                 'expected_task_state': task_states.SCHEDULING
+    #             })
+    #     except exception.UnexpectedTaskStateError as ex:
+    #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
+    #         self.assertEqual(ex.kwargs['actual'], {'task_state': None})
+    #         self.assertEqual(ex.kwargs['expected'],
+    #                          {'task_state': [task_states.SCHEDULING]})
+    #     else:
+    #         self.fail('UnexpectedTaskStateError was not raised')
+    #
+    # def test_instance_update_and_get_original_expected_task_state_single_pass(self):  # noqa
+    #     # Ensure that we allow an update when expected task is correct
+    #     instance = self.create_instance_with_args()
+    #
+    #     (orig, new) = db.instance_update_and_get_original(
+    #         self.ctxt, instance['uuid'], {
+    #             'host': None,
+    #             'expected_task_state': None
+    #         })
+    #     self.assertIsNone(new['host'])
+    #
+    # def test_instance_update_and_get_original_expected_task_state_multi_fail(self):  # noqa
+    #     # Ensure that we detect a changed expected task and raise
+    #     # UnexpectedTaskStateError when there are multiple potential expected
+    #     # tasks
+    #     instance = self.create_instance_with_args()
+    #
+    #     try:
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {
+    #                 'host': None,
+    #                 'expected_task_state': [task_states.SCHEDULING,
+    #                                         task_states.REBUILDING]
+    #             })
+    #     except exception.UnexpectedTaskStateError as ex:
+    #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
+    #         self.assertEqual(ex.kwargs['actual'], {'task_state': None})
+    #         self.assertEqual(ex.kwargs['expected'],
+    #                          {'task_state': [task_states.SCHEDULING,
+    #                                           task_states.REBUILDING]})
+    #     else:
+    #         self.fail('UnexpectedTaskStateError was not raised')
+    #
+    # def test_instance_update_and_get_original_expected_task_state_multi_pass(self):  # noqa
+    #     # Ensure that we allow an update when expected task is in a list of
+    #     # expected tasks
+    #     instance = self.create_instance_with_args()
+    #
+    #     (orig, new) = db.instance_update_and_get_original(
+    #         self.ctxt, instance['uuid'], {
+    #             'host': None,
+    #             'expected_task_state': [task_states.SCHEDULING, None]
+    #         })
+    #     self.assertIsNone(new['host'])
+    #
+    # def test_instance_update_and_get_original_expected_task_state_deleting(self):  # noqa
+    #     # Ensure that we raise UnepectedDeletingTaskStateError when task state
+    #     # is not as expected, and it is DELETING
+    #     instance = self.create_instance_with_args(
+    #         task_state=task_states.DELETING)
+    #
+    #     try:
+    #         db.instance_update_and_get_original(
+    #             self.ctxt, instance['uuid'], {
+    #                 'host': None,
+    #                 'expected_task_state': task_states.SCHEDULING
+    #             })
+    #     except exception.UnexpectedDeletingTaskStateError as ex:
+    #         self.assertEqual(ex.kwargs['instance_uuid'], instance['uuid'])
+    #         self.assertEqual(ex.kwargs['actual'],
+    #                          {'task_state': task_states.DELETING})
+    #         self.assertEqual(ex.kwargs['expected'],
+    #                          {'task_state': [task_states.SCHEDULING]})
+    #     else:
+    #         self.fail('UnexpectedDeletingTaskStateError was not raised')
+
+    # def test_instance_update_unique_name(self):
+    #     context1 = context.RequestContext('user1', 'p1')
+    #     context2 = context.RequestContext('user2', 'p2')
+    #
+    #     inst1 = self.create_instance_with_args(context=context1,
+    #                                            project_id='p1',
+    #                                            hostname='fake_name1')
+    #     inst2 = self.create_instance_with_args(context=context1,
+    #                                            project_id='p1',
+    #                                            hostname='fake_name2')
+    #     inst3 = self.create_instance_with_args(context=context2,
+    #                                            project_id='p2',
+    #                                            hostname='fake_name3')
+    #     # osapi_compute_unique_server_name_scope is unset so this should work:
+    #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_name2'})
+    #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_name1'})
+    #
+    #     # With scope 'global' any duplicate should fail.
+    #     self.flags(osapi_compute_unique_server_name_scope='global')
+    #     self.assertRaises(exception.InstanceExists,
+    #                       db.instance_update,
+    #                       context1,
+    #                       inst2['uuid'],
+    #                       {'hostname': 'fake_name1'})
+    #     self.assertRaises(exception.InstanceExists,
+    #                       db.instance_update,
+    #                       context2,
+    #                       inst3['uuid'],
+    #                       {'hostname': 'fake_name1'})
+    #     # But we should definitely be able to update our name if we aren't
+    #     #  really changing it.
+    #     db.instance_update(context1, inst1['uuid'], {'hostname': 'fake_NAME'})
+    #
+    #     # With scope 'project' a duplicate in the project should fail:
+    #     self.flags(osapi_compute_unique_server_name_scope='project')
+    #     self.assertRaises(exception.InstanceExists, db.instance_update,
+    #                       context1, inst2['uuid'], {'hostname': 'fake_NAME'})
+    #
+    #     # With scope 'project' a duplicate in a different project should work:
+    #     self.flags(osapi_compute_unique_server_name_scope='project')
+    #     db.instance_update(context2, inst3['uuid'], {'hostname': 'fake_NAME'})
+
+    # def _test_instance_update_updates_metadata(self, metadata_type):
+    #     instance = self.create_instance_with_args()
+    #
+    #     def set_and_check(meta):
+    #         inst = db.instance_update(self.ctxt, instance['uuid'],
+    #                            {metadata_type: dict(meta)})
+    #         _meta = utils.metadata_to_dict(inst[metadata_type])
+    #         self.assertEqual(meta, _meta)
+    #
+    #     meta = {'speed': '88', 'units': 'MPH'}
+    #     set_and_check(meta)
+    #     meta['gigawatts'] = '1.21'
+    #     set_and_check(meta)
+    #     del meta['gigawatts']
+    #     set_and_check(meta)
+    #     self.ctxt.read_deleted = 'yes'
+    #     self.assertNotIn('gigawatts',
+    #         db.instance_system_metadata_get(self.ctxt, instance.uuid))
+    #
+    # def test_security_group_in_use(self):
+    #     db.instance_create(self.ctxt, dict(host='foo'))
+    #
+    # def test_instance_update_updates_system_metadata(self):
+    #     # Ensure that system_metadata is updated during instance_update
+    #     self._test_instance_update_updates_metadata('system_metadata')
+    #
+    # def test_instance_update_updates_metadata(self):
+    #     # Ensure that metadata is updated during instance_update
+    #     self._test_instance_update_updates_metadata('metadata')
+    #
+    # def test_instance_floating_address_get_all(self):
+    #     ctxt = context.get_admin_context()
+    #
+    #     instance1 = db.instance_create(ctxt, {'host': 'h1', 'hostname': 'n1'})
+    #     instance2 = db.instance_create(ctxt, {'host': 'h2', 'hostname': 'n2'})
+    #
+    #     fixed_addresses = ['1.1.1.1', '1.1.1.2', '1.1.1.3']
+    #     float_addresses = ['2.1.1.1', '2.1.1.2', '2.1.1.3']
+    #     instance_uuids = [instance1['uuid'], instance1['uuid'],
+    #                       instance2['uuid']]
+    #
+    #     for fixed_addr, float_addr, instance_uuid in zip(fixed_addresses,
+    #                                                      float_addresses,
+    #                                                      instance_uuids):
+    #         db.fixed_ip_create(ctxt, {'address': fixed_addr,
+    #                                   'instance_uuid': instance_uuid})
+    #         fixed_id = db.fixed_ip_get_by_address(ctxt, fixed_addr)['id']
+    #         db.floating_ip_create(ctxt,
+    #                               {'address': float_addr,
+    #                                'fixed_ip_id': fixed_id})
+    #
+    #     real_float_addresses = \
+    #             db.instance_floating_address_get_all(ctxt, instance_uuids[0])
+    #     self.assertEqual(set(float_addresses[:2]), set(real_float_addresses))
+    #     real_float_addresses = \
+    #             db.instance_floating_address_get_all(ctxt, instance_uuids[2])
+    #     self.assertEqual(set([float_addresses[2]]), set(real_float_addresses))
+    #
+    #     self.assertRaises(exception.InvalidUUID,
+    #                       db.instance_floating_address_get_all,
+    #                       ctxt, 'invalid_uuid')
+    #
+    # def test_instance_stringified_ips(self):
+    #     instance = self.create_instance_with_args()
+    #     instance = db.instance_update(
+    #         self.ctxt, instance['uuid'],
+    #         {'access_ip_v4': netaddr.IPAddress('1.2.3.4'),
+    #          'access_ip_v6': netaddr.IPAddress('::1')})
+    #     self.assertIsInstance(instance['access_ip_v4'], six.string_types)
+    #     self.assertIsInstance(instance['access_ip_v6'], six.string_types)
+    #     instance = db.instance_get_by_uuid(self.ctxt, instance['uuid'])
+    #     self.assertIsInstance(instance['access_ip_v4'], six.string_types)
+    #     self.assertIsInstance(instance['access_ip_v6'], six.string_types)
+    #
+    # # @mock.patch('nova.db.sqlalchemy.api._check_instance_exists_in_project',
+    # #             return_value=None)
+    # # def test_instance_destroy(self, mock_check_inst_exists):
     # #     ctxt = context.get_admin_context()
+    # #     values = {
+    # #         'metadata': {'key': 'value'},
+    # #         'system_metadata': {'key': 'value'}
+    # #     }
+    # #     inst_uuid = self.create_instance_with_args(**values)['uuid']
+    # #     db.instance_tag_set(ctxt, inst_uuid, [u'tag1', u'tag2'])
+    # #     db.instance_destroy(ctxt, inst_uuid)
     # #
-    # #     instance1 = db.instance_create(ctxt, {'host': 'h1', 'hostname': 'n1'})
-    # #     instance2 = db.instance_create(ctxt, {'host': 'h2', 'hostname': 'n2'})
-    # #
-    # #     fixed_addresses = ['1.1.1.1', '1.1.1.2', '1.1.1.3']
-    # #     float_addresses = ['2.1.1.1', '2.1.1.2', '2.1.1.3']
-    # #     instance_uuids = [instance1['uuid'], instance1['uuid'],
-    # #                       instance2['uuid']]
-    # #
-    # #     for fixed_addr, float_addr, instance_uuid in zip(fixed_addresses,
-    # #                                                      float_addresses,
-    # #                                                      instance_uuids):
-    # #         db.fixed_ip_create(ctxt, {'address': fixed_addr,
-    # #                                   'instance_uuid': instance_uuid})
-    # #         fixed_id = db.fixed_ip_get_by_address(ctxt, fixed_addr)['id']
-    # #         db.floating_ip_create(ctxt,
-    # #                               {'address': float_addr,
-    # #                                'fixed_ip_id': fixed_id})
-    # #
-    # #     real_float_addresses = \
-    # #             db.instance_floating_address_get_all(ctxt, instance_uuids[0])
-    # #     self.assertEqual(set(float_addresses[:2]), set(real_float_addresses))
-    # #     real_float_addresses = \
-    # #             db.instance_floating_address_get_all(ctxt, instance_uuids[2])
-    # #     self.assertEqual(set([float_addresses[2]]), set(real_float_addresses))
-    # #
-    # #     self.assertRaises(exception.InvalidUUID,
-    # #                       db.instance_floating_address_get_all,
-    # #                       ctxt, 'invalid_uuid')
-    # #
-    # # def test_instance_stringified_ips(self):
+    # #     self.assertRaises(exception.InstanceNotFound,
+    # #                       db.instance_get, ctxt, inst_uuid)
+    # #     self.assertIsNone(db.instance_info_cache_get(ctxt, inst_uuid))
+    # #     self.assertEqual({}, db.instance_metadata_get(ctxt, inst_uuid))
+    # #     self.assertEqual([], db.instance_tag_get_by_instance_uuid(
+    # #         ctxt, inst_uuid))
+    # #     ctxt.read_deleted = 'yes'
+    # #     self.assertEqual(values['system_metadata'],
+    # #                      db.instance_system_metadata_get(ctxt, inst_uuid))
+    #
+    # # def test_instance_destroy_already_destroyed(self):
+    # #     ctxt = context.get_admin_context()
     # #     instance = self.create_instance_with_args()
-    # #     instance = db.instance_update(
-    # #         self.ctxt, instance['uuid'],
-    # #         {'access_ip_v4': netaddr.IPAddress('1.2.3.4'),
-    # #          'access_ip_v6': netaddr.IPAddress('::1')})
-    # #     self.assertIsInstance(instance['access_ip_v4'], six.string_types)
-    # #     self.assertIsInstance(instance['access_ip_v6'], six.string_types)
-    # #     instance = db.instance_get_by_uuid(self.ctxt, instance['uuid'])
-    # #     self.assertIsInstance(instance['access_ip_v4'], six.string_types)
-    # #     self.assertIsInstance(instance['access_ip_v6'], six.string_types)
+    # #     db.instance_destroy(ctxt, instance['uuid'])
+    # #     self.assertRaises(exception.InstanceNotFound,
+    # #                       db.instance_destroy, ctxt, instance['uuid'])
     # #
-    # # # @mock.patch('nova.db.sqlalchemy.api._check_instance_exists_in_project',
-    # # #             return_value=None)
-    # # # def test_instance_destroy(self, mock_check_inst_exists):
-    # # #     ctxt = context.get_admin_context()
-    # # #     values = {
-    # # #         'metadata': {'key': 'value'},
-    # # #         'system_metadata': {'key': 'value'}
-    # # #     }
-    # # #     inst_uuid = self.create_instance_with_args(**values)['uuid']
-    # # #     db.instance_tag_set(ctxt, inst_uuid, [u'tag1', u'tag2'])
-    # # #     db.instance_destroy(ctxt, inst_uuid)
-    # # #
-    # # #     self.assertRaises(exception.InstanceNotFound,
-    # # #                       db.instance_get, ctxt, inst_uuid)
-    # # #     self.assertIsNone(db.instance_info_cache_get(ctxt, inst_uuid))
-    # # #     self.assertEqual({}, db.instance_metadata_get(ctxt, inst_uuid))
-    # # #     self.assertEqual([], db.instance_tag_get_by_instance_uuid(
-    # # #         ctxt, inst_uuid))
-    # # #     ctxt.read_deleted = 'yes'
-    # # #     self.assertEqual(values['system_metadata'],
-    # # #                      db.instance_system_metadata_get(ctxt, inst_uuid))
-    # #
-    # # # def test_instance_destroy_already_destroyed(self):
-    # # #     ctxt = context.get_admin_context()
+    # # # def test_check_instance_exists(self):
     # # #     instance = self.create_instance_with_args()
-    # # #     db.instance_destroy(ctxt, instance['uuid'])
-    # # #     self.assertRaises(exception.InstanceNotFound,
-    # # #                       db.instance_destroy, ctxt, instance['uuid'])
+    # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
+    # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
+    # # #             self.ctxt, instance['uuid']))
     # # #
-    # # # # def test_check_instance_exists(self):
-    # # # #     instance = self.create_instance_with_args()
-    # # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
-    # # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
-    # # # #             self.ctxt, instance['uuid']))
-    # # # #
-    # # # # def test_check_instance_exists_non_existing_instance(self):
-    # # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
-    # # # #         self.assertRaises(exception.InstanceNotFound,
-    # # # #                           sqlalchemy_api._check_instance_exists_in_project,
-    # # # #                           self.ctxt, '123')
-    # # # #
-    # # # # def test_check_instance_exists_from_different_tenant(self):
-    # # # #     context1 = context.RequestContext('user1', 'project1')
-    # # # #     context2 = context.RequestContext('user2', 'project2')
-    # # # #     instance = self.create_instance_with_args(context=context1)
-    # # # #     with sqlalchemy_api.main_context_manager.reader.using(context1):
-    # # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
-    # # # #         context1, instance['uuid']))
-    # # # #
-    # # # #     with sqlalchemy_api.main_context_manager.reader.using(context2):
-    # # # #         self.assertRaises(exception.InstanceNotFound,
-    # # # #                           sqlalchemy_api._check_instance_exists_in_project,
-    # # # #                           context2, instance['uuid'])
-    # # # #
-    # # # # def test_check_instance_exists_admin_context(self):
-    # # # #     some_context = context.RequestContext('some_user', 'some_project')
-    # # # #     instance = self.create_instance_with_args(context=some_context)
-    # # # #
-    # # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
-    # # # #         # Check that method works correctly with admin context
-    # # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
-    # # # #             self.ctxt, instance['uuid']))
+    # # # def test_check_instance_exists_non_existing_instance(self):
+    # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
+    # # #         self.assertRaises(exception.InstanceNotFound,
+    # # #                           sqlalchemy_api._check_instance_exists_in_project,
+    # # #                           self.ctxt, '123')
+    # # #
+    # # # def test_check_instance_exists_from_different_tenant(self):
+    # # #     context1 = context.RequestContext('user1', 'project1')
+    # # #     context2 = context.RequestContext('user2', 'project2')
+    # # #     instance = self.create_instance_with_args(context=context1)
+    # # #     with sqlalchemy_api.main_context_manager.reader.using(context1):
+    # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
+    # # #         context1, instance['uuid']))
+    # # #
+    # # #     with sqlalchemy_api.main_context_manager.reader.using(context2):
+    # # #         self.assertRaises(exception.InstanceNotFound,
+    # # #                           sqlalchemy_api._check_instance_exists_in_project,
+    # # #                           context2, instance['uuid'])
+    # # #
+    # # # def test_check_instance_exists_admin_context(self):
+    # # #     some_context = context.RequestContext('some_user', 'some_project')
+    # # #     instance = self.create_instance_with_args(context=some_context)
+    # # #
+    # # #     with sqlalchemy_api.main_context_manager.reader.using(self.ctxt):
+    # # #         # Check that method works correctly with admin context
+    # # #         self.assertIsNone(sqlalchemy_api._check_instance_exists_in_project(
+    # # #             self.ctxt, instance['uuid']))
