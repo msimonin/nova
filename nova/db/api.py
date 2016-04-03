@@ -51,8 +51,8 @@ CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
 # mega hack
-#_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
-_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
+_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
+# _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 
 CONF.log_opt_values(LOG, logging.DEBUG)
 
