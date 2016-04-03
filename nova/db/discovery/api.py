@@ -224,6 +224,8 @@ class RomeRequestContext(object):
 class RomeContextManager(object):
     pass
 
+from lib.rome.core.session.session import DBDeadlock
+
 def wrapp_with_session(f):
     """Decorator to use a writer db context manager.
 
@@ -236,7 +238,11 @@ def wrapp_with_session(f):
         new_context = RomeRequestContext()
         new_context.load_context(context)
         with new_context.session.begin():
-            return f(new_context, *args, **kwargs)
+            try:
+                result = f(new_context, *args, **kwargs)
+            except DBDeadlock:
+                pass
+        return result
     return wrapped
 
 def get_context_manager(context):
@@ -471,6 +477,11 @@ def model_query(context, model,
 
     if read_deleted is None:
         read_deleted = "no"
+
+    if type(context) is not RomeRequestContext:
+        rome_context = RomeRequestContext()
+        rome_context.load_context(context)
+        context = rome_context
 
     query = RomeQuery(model, context.session, args)
 
@@ -2765,13 +2776,19 @@ def instance_get_all_by_host_and_not_type(context, host, type_id=None):
 def instance_get_all_by_grantee_security_groups(context, group_ids):
     if not group_ids:
         return []
-    return _instances_fill_metadata(context,
-        _instance_get_all_query(context).
-            join(models.Instance.security_groups).
-            filter(models.SecurityGroup.rules.any(
-                models.SecurityGroupIngressRule.group_id.in_(group_ids))).
-            all())
+    parent_group_ids = []
+    for secgroup in RomeQuery(models.SecurityGroupIngressRule).filter(models.SecurityGroupIngressRule.group_id.in_(group_ids)):
+        parent_group_ids += [secgroup.parent_group_id]
 
+    query = RomeQuery(models.Instance).join(models.InstanceGroupMember, models.InstanceGroupMember.instance_id==models.Instance.id)
+    matching_results = query.all()
+    matching_results = filter(lambda x: x[0].group_id in parent_group_ids, matching_results)
+    matching_instances = map(lambda r: r[1], matching_results)
+    # Remove duplicates
+    result = {}
+    for instance in matching_instances:
+        result[instance.id] = instance
+    return result.values()
 
 @require_context
 @wrapp_with_session
@@ -2779,13 +2796,15 @@ def instance_floating_address_get_all(context, instance_uuid):
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
 
-    floating_ips = model_query(context,
+    floating_ips_joined_with_fixed_ips = model_query(context,
                                models.FloatingIp,
                                (models.FloatingIp.address,)).\
-        join(models.FloatingIp.fixed_ip).\
-        filter_by(instance_uuid=instance_uuid)
-
-    return [floating_ip.address for floating_ip in floating_ips]
+        join(models.FixedIp, models.FloatingIp.fixed_ip_id==models.FixedIp.id).\
+        filter(models.FixedIp.instance_uuid==instance_uuid).all()
+    floating_ips = map(lambda x: x[1], floating_ips_joined_with_fixed_ips)
+    floating_addresses = [str(floating_ip.address) for floating_ip in floating_ips]
+    floating_addresses = sorted(floating_addresses)
+    return floating_addresses
 
 
 # NOTE(hanlind): This method can be removed as conductor RPC API moves to v2.0.
@@ -2873,6 +2892,9 @@ def _instance_metadata_update_in_place(context, instance, metadata_type, model,
         key = keyvalue['key']
         if key in metadata:
             keyvalue['value'] = metadata.pop(key)
+            # TODO(jonathan): add a session.add here, to be sure that
+            # the object will be taken into account by session.
+            context.session.add(keyvalue)
         elif key not in metadata:
             to_delete.append(keyvalue)
 
@@ -2936,6 +2958,9 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
     try:
         instance_ref = model_query(context, models.Instance).filter(models.Instance.uuid==instance_uuid).first()
         instance_ref.update(values)
+        for k,v in expected.iteritems():
+            if instance_ref[k] != expected[k]:
+                raise(update_match.NoRowsMatched())
         instance_ref.save()
         # instance_ref = model_query(context, models.Instance,
         #                            project_only=True).\
@@ -4439,7 +4464,12 @@ def security_group_create(context, values):
     try:
         # TODO(jonathan): "wrapp_with_session.savepoint.using" => ""
         # with wrapp_with_session.savepoint.using(context):
-        security_group_ref.save(context.session)
+        security_group_ref.save()
+        for instance in security_group_ref.instances:
+            member = models.InstanceGroupMember()
+            member.instance_id = instance.id
+            member.group_id = security_group_ref.id
+            member.save()
     except db_exc.DBDuplicateEntry:
         raise exception.SecurityGroupExists(
                 project_id=values['project_id'],
