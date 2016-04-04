@@ -50,9 +50,8 @@ LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
-# mega hack
 _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
-#_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
+_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 
 IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # The maximum value a signed INT type may have
