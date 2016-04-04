@@ -141,13 +141,13 @@ class LiveMigrationTask(base.TaskBase):
         source_info = self._get_compute_info(self.source)
         destination_info = self._get_compute_info(destination)
 
-        source_type = source_info['hypervisor_type']
-        destination_type = destination_info['hypervisor_type']
+        source_type = source_info.hypervisor_type
+        destination_type = destination_info.hypervisor_type
         if source_type != destination_type:
             raise exception.InvalidHypervisorType()
 
-        source_version = source_info['hypervisor_version']
-        destination_version = destination_info['hypervisor_version']
+        source_version = source_info.hypervisor_version
+        destination_version = destination_info.hypervisor_version
         if source_version > destination_version:
             raise exception.DestinationHypervisorTooOld()
 
@@ -184,6 +184,10 @@ class LiveMigrationTask(base.TaskBase):
             )
         else:
             request_spec = self.request_spec
+            # NOTE(sbauza): Force_hosts/nodes needs to be reset
+            # if we want to make sure that the next destination
+            # is not forced to be the original host
+            request_spec.reset_forced_destinations()
 
         host = None
         while host is None:

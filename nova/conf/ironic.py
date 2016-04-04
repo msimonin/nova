@@ -51,6 +51,11 @@ admin_url = cfg.StrOpt(
     'admin_url',
     help='Keystone public API endpoint.')
 
+cafile = cfg.StrOpt(
+    'cafile',
+    help='PEM encoded Certificate Authority to use when verifying HTTPs '
+         'connections.')
+
 client_log_level = cfg.StrOpt(
     'client_log_level',
     deprecated_for_removal=True,
@@ -81,6 +86,7 @@ ALL_OPTS = [api_version,
             admin_password,
             admin_auth_token,
             admin_url,
+            cafile,
             client_log_level,
             admin_tenant_name,
             api_max_retries,
@@ -93,8 +99,4 @@ def register_opts(conf):
 
 
 def list_opts():
-    # Because of bug 1395819 in oslo.config we cannot pass in the OptGroup.
-    # As soon as this bug is fixed is oslo.config and Nova uses the
-    # version which contains this fix, we can pass in the OptGroup instead
-    # of its name. This allows the generation of the group help too.
-    return {ironic_group.name: ALL_OPTS}
+    return {ironic_group: ALL_OPTS}

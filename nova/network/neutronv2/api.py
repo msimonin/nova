@@ -30,14 +30,17 @@ import six
 
 from nova.api.openstack import extensions
 from nova.compute import utils as compute_utils
+import nova.conf
 from nova import exception
 from nova.i18n import _, _LE, _LI, _LW
 from nova.network import base_api
 from nova.network import model as network_model
 from nova.network.neutronv2 import constants
 from nova import objects
+from nova.objects import fields as obj_fields
 from nova.pci import manager as pci_manager
 from nova.pci import request as pci_request
+from nova.pci import utils as pci_utils
 from nova.pci import whitelist as pci_whitelist
 
 neutron_opts = [
@@ -58,7 +61,7 @@ neutron_opts = [
 
 NEUTRON_GROUP = 'neutron'
 
-CONF = cfg.CONF
+CONF = nova.conf.CONF
 CONF.register_opts(neutron_opts, NEUTRON_GROUP)
 
 deprecations = {'cafile': [cfg.DeprecatedOpt('ca_certificates_file',
@@ -74,7 +77,6 @@ ks_loading.register_auth_conf_options(CONF, NEUTRON_GROUP)
 
 
 CONF.import_opt('default_floating_pool', 'nova.network.floating_ips')
-CONF.import_opt('flat_injected', 'nova.network.manager')
 LOG = logging.getLogger(__name__)
 
 soft_external_network_attach_authorize = extensions.soft_core_authorizer(
@@ -643,6 +645,8 @@ class API(base_api.NetworkAPI):
                     context, instance, request.pci_request_id, port_req_body,
                     network=network, neutron=neutron,
                     bind_host_id=bind_host_id)
+                self._populate_mac_address(instance, request.pci_request_id,
+                                           port_req_body)
                 if request.port_id:
                     port = ports[request.port_id]
                     port_client.update_port(port['id'], port_req_body)
@@ -715,6 +719,38 @@ class API(base_api.NetworkAPI):
                            devspec.get_tags().get('physical_network')
                       }
             port_req_body['port']['binding:profile'] = profile
+
+    @staticmethod
+    def _populate_mac_address(instance, pci_request_id, port_req_body):
+        """Add the updated MAC address value to the update_port request body.
+
+        Currently this is done only for PF passthrough.
+        """
+        if pci_request_id is not None:
+            pci_devs = pci_manager.get_instance_pci_devs(
+                instance, pci_request_id)
+            if len(pci_devs) != 1:
+                # NOTE(ndipanov): We shouldn't ever get here since
+                # InstancePCIRequest instances built from network requests
+                # only ever index a single device, which needs to be
+                # successfully claimed for this to be called as part of
+                # allocate_networks method
+                LOG.error(_LE("PCI request %s does not have a "
+                              "unique device associated with it. Unable to "
+                              "determine MAC address"),
+                          pci_request, instance=instance)
+                return
+            pci_dev = pci_devs[0]
+            if pci_dev.dev_type == obj_fields.PciDeviceType.SRIOV_PF:
+                try:
+                    mac = pci_utils.get_mac_by_pci_address(pci_dev.address)
+                except exception.PciDeviceNotFoundById as e:
+                    LOG.error(
+                        _LE("Could not determine MAC address for %(addr)s, "
+                            "error: %(e)s"),
+                        {"addr": pci_dev.address, "e": e}, instance=instance)
+                else:
+                    port_req_body['port']['mac_address'] = mac
 
     def _populate_neutron_extension_values(self, context, instance,
                                            pci_request_id, port_req_body,
@@ -1069,9 +1105,13 @@ class API(base_api.NetworkAPI):
                     context, neutron, request_net.port_id)
             pci_request_id = None
             if vnic_type in network_model.VNIC_TYPES_SRIOV:
+                spec = {pci_request.PCI_NET_TAG: phynet_name}
+                dev_type = pci_request.DEVICE_TYPE_FOR_VNIC_TYPE.get(vnic_type)
+                if dev_type:
+                    spec[pci_request.PCI_DEVICE_TYPE_TAG] = dev_type
                 request = objects.InstancePCIRequest(
                     count=1,
-                    spec=[{pci_request.PCI_NET_TAG: phynet_name}],
+                    spec=[spec],
                     request_id=str(uuid.uuid4()))
                 pci_requests.requests.append(request)
                 pci_request_id = request.request_id

@@ -20,18 +20,18 @@ from six.moves import StringIO
 import cryptography
 import glanceclient.exc
 import mock
-from oslo_config import cfg
+
 from oslo_service import sslutils
-from oslo_utils import netutils
 import six
 import testtools
 
+import nova.conf
 from nova import context
 from nova import exception
 from nova.image import glance
 from nova import test
 
-CONF = cfg.CONF
+CONF = nova.conf.CONF
 NOW_GLANCE_FORMAT = "2010-10-11T10:30:22.000000"
 
 
@@ -189,11 +189,9 @@ class TestGetImageService(test.NoDBTestCase):
 
 
 class TestCreateGlanceClient(test.NoDBTestCase):
-    @mock.patch('oslo_utils.netutils.is_valid_ipv6')
     @mock.patch('glanceclient.Client')
-    def test_headers_passed_glanceclient(self, init_mock, ipv6_mock):
+    def test_headers_passed_glanceclient(self, init_mock):
         self.flags(auth_strategy='keystone')
-        ipv6_mock.return_value = False
         auth_token = 'token'
         ctx = context.RequestContext('fake', 'fake', auth_token=auth_token)
 
@@ -212,7 +210,6 @@ class TestCreateGlanceClient(test.NoDBTestCase):
                                           **expected_params)
 
         # Test the version is properly passed to glanceclient.
-        ipv6_mock.reset_mock()
         init_mock.reset_mock()
 
         expected_endpoint = 'http://host4:9295'
@@ -230,10 +227,7 @@ class TestCreateGlanceClient(test.NoDBTestCase):
                                           **expected_params)
 
         # Test that the IPv6 bracketization adapts the endpoint properly.
-        ipv6_mock.reset_mock()
         init_mock.reset_mock()
-
-        ipv6_mock.return_value = True
 
         expected_endpoint = 'http://[host4]:9295'
         glance._glanceclient_from_endpoint(ctx, expected_endpoint)
@@ -1363,28 +1357,6 @@ class TestDelete(test.NoDBTestCase):
                           mock.sentinel.image_id)
 
 
-class TestGlanceUrl(test.NoDBTestCase):
-
-    def test_generate_glance_http_url(self):
-        generated_url = glance.generate_glance_url()
-        glance_host = CONF.glance.host
-        # ipv6 address, need to wrap it with '[]'
-        if netutils.is_valid_ipv6(glance_host):
-            glance_host = '[%s]' % glance_host
-        http_url = "http://%s:%d" % (glance_host, CONF.glance.port)
-        self.assertEqual(generated_url, http_url)
-
-    def test_generate_glance_https_url(self):
-        self.flags(protocol="https", group='glance')
-        generated_url = glance.generate_glance_url()
-        glance_host = CONF.glance.host
-        # ipv6 address, need to wrap it with '[]'
-        if netutils.is_valid_ipv6(glance_host):
-            glance_host = '[%s]' % glance_host
-        https_url = "https://%s:%d" % (glance_host, CONF.glance.port)
-        self.assertEqual(generated_url, https_url)
-
-
 class TestGlanceApiServers(test.NoDBTestCase):
 
     def test_get_api_servers(self):
@@ -1402,29 +1374,6 @@ class TestGlanceApiServers(test.NoDBTestCase):
             self.assertIn(server, expected_servers)
             if i > 2:
                 break
-
-
-class TestGlanceNoApiServers(test.NoDBTestCase):
-    def test_get_api_server_no_server(self):
-        self.flags(group='glance',
-                   host="10.0.0.1",
-                   port=9292)
-        api_servers = glance.get_api_servers()
-        self.assertEqual("http://10.0.0.1:9292", next(api_servers))
-
-        self.flags(group='glance',
-                   host="10.0.0.1",
-                   protocol="https",
-                   port=9292)
-        api_servers = glance.get_api_servers()
-        self.assertEqual("https://10.0.0.1:9292", next(api_servers))
-
-        self.flags(group='glance',
-                   host="f000::c0de",
-                   protocol="https",
-                   port=9292)
-        api_servers = glance.get_api_servers()
-        self.assertEqual("https://[f000::c0de]:9292", next(api_servers))
 
 
 class TestUpdateGlanceImage(test.NoDBTestCase):

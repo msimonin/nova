@@ -172,7 +172,6 @@ class ComputeTaskManager(base.Base):
         exception.HypervisorUnavailable,
         exception.InstanceInvalidState,
         exception.MigrationPreCheckError,
-        exception.LiveMigrationWithOldNovaNotSafe,
         exception.LiveMigrationWithOldNovaNotSupported,
         exception.UnsupportedPolicyException)
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
@@ -320,7 +319,6 @@ class ComputeTaskManager(base.Base):
                 exception.HypervisorUnavailable,
                 exception.InstanceInvalidState,
                 exception.MigrationPreCheckError,
-                exception.LiveMigrationWithOldNovaNotSafe,
                 exception.LiveMigrationWithOldNovaNotSupported,
                 exception.MigrationSchedulerRPCError) as ex:
             with excutils.save_and_reraise_exception():
@@ -358,6 +356,33 @@ class ComputeTaskManager(base.Base):
                                      reservations, clean_shutdown,
                                      self.compute_rpcapi,
                                      self.scheduler_client)
+
+    def _populate_instance_mapping(self, context, instance, host):
+        try:
+            inst_mapping = objects.InstanceMapping.get_by_instance_uuid(
+                    context, instance.uuid)
+        except exception.InstanceMappingNotFound:
+            # NOTE(alaski): If nova-api is up to date this exception should
+            # never be hit. But during an upgrade it's possible that an old
+            # nova-api didn't create an instance_mapping during this boot
+            # request.
+            LOG.debug('Instance was not mapped to a cell, likely due '
+                      'to an older nova-api service running.',
+                      instance=instance)
+        else:
+            try:
+                host_mapping = objects.HostMapping.get_by_host(context,
+                        host['host'])
+            except exception.HostMappingNotFound:
+                # NOTE(alaski): For now this exception means that a
+                # deployment has not migrated to cellsv2 and we should
+                # remove the instance_mapping that has been created.
+                # Eventually this will indicate a failure to properly map a
+                # host to a cell and we may want to reschedule.
+                inst_mapping.destroy()
+            else:
+                inst_mapping.cell_mapping = host_mapping.cell_mapping
+                inst_mapping.save()
 
     def build_instances(self, context, instances, image, filter_properties,
             admin_password, injected_files, requested_networks,
@@ -414,6 +439,8 @@ class ComputeTaskManager(base.Base):
             # instance specific information
             bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(
                     context, instance.uuid)
+
+            self._populate_instance_mapping(context, instance, host)
 
             self.compute_rpcapi.build_and_run_instance(context,
                     instance=instance, host=host['host'], image=image,
@@ -482,6 +509,10 @@ class ComputeTaskManager(base.Base):
                         request_spec = scheduler_utils.build_request_spec(
                             context, image, [instance])
                     else:
+                        # NOTE(sbauza): Force_hosts/nodes needs to be reset
+                        # if we want to make sure that the next destination
+                        # is not forced to be the original host
+                        request_spec.reset_forced_destinations()
                         # TODO(sbauza): Provide directly the RequestSpec object
                         # when _schedule_instances(),
                         # populate_filter_properties and populate_retry()
@@ -543,6 +574,10 @@ class ComputeTaskManager(base.Base):
                     # the source host for avoiding the scheduler to pick it
                     request_spec.ignore_hosts = request_spec.ignore_hosts or []
                     request_spec.ignore_hosts.append(instance.host)
+                    # NOTE(sbauza): Force_hosts/nodes needs to be reset
+                    # if we want to make sure that the next destination
+                    # is not forced to be the original host
+                    request_spec.reset_forced_destinations()
                     # TODO(sbauza): Provide directly the RequestSpec object
                     # when _schedule_instances() and _set_vm_state_and_notify()
                     # accept it

@@ -25,7 +25,7 @@ import uuid as stdlib_uuid
 import iso8601
 import mock
 import netaddr
-from oslo_config import cfg
+
 from oslo_db import api as oslo_db_api
 from oslo_db import exception as db_exc
 from oslo_db.sqlalchemy import enginefacade
@@ -53,6 +53,7 @@ from nova import block_device
 from nova.compute import arch
 from nova.compute import task_states
 from nova.compute import vm_states
+import nova.conf
 from nova import context
 from nova import db
 # from nova.db.sqlalchemy import api as sqlalchemy_api
@@ -70,9 +71,7 @@ from nova.tests.unit import matchers
 from nova.tests import uuidsentinel
 from nova import utils
 
-CONF = cfg.CONF
-CONF.import_opt('reserved_host_memory_mb', 'nova.compute.resource_tracker')
-CONF.import_opt('reserved_host_disk_mb', 'nova.compute.resource_tracker')
+CONF = nova.conf.CONF
 
 get_engine = sqlalchemy_api.get_engine
 
@@ -4138,10 +4137,30 @@ class InstanceTypeTestCase(BaseInstanceTypeTestCase):
             assert_sorted_by_key_both_dir(attr)
 
     def test_flavor_get_all_limit(self):
+        flavors = [
+            {'root_gb': 1, 'memory_mb': 100, 'disabled': True,
+             'is_public': False, 'name': 'flavor1', 'flavorid': 'flavor1'},
+            {'root_gb': 100, 'memory_mb': 200, 'disabled': True,
+             'is_public': False, 'name': 'flavor2', 'flavorid': 'flavor2'},
+            {'root_gb': 100, 'memory_mb': 300, 'disabled': True,
+             'is_public': False, 'name': 'flavor3', 'flavorid': 'flavor3'},
+        ]
+        flavors = [self._create_flavor(it) for it in flavors]
+
         limited_flavors = db.flavor_get_all(self.ctxt, limit=2)
         self.assertEqual(2, len(limited_flavors))
 
     def test_flavor_get_all_list_marker(self):
+        flavors = [
+            {'root_gb': 1, 'memory_mb': 100, 'disabled': True,
+             'is_public': False, 'name': 'flavor1', 'flavorid': 'flavor1'},
+            {'root_gb': 100, 'memory_mb': 200, 'disabled': True,
+             'is_public': False, 'name': 'flavor2', 'flavorid': 'flavor2'},
+            {'root_gb': 100, 'memory_mb': 300, 'disabled': True,
+             'is_public': False, 'name': 'flavor3', 'flavorid': 'flavor3'},
+        ]
+        flavors = [self._create_flavor(it) for it in flavors]
+
         all_flavors = db.flavor_get_all(self.ctxt)
 
         # Set the 3rd result as the marker

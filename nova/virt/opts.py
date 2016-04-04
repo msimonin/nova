@@ -15,12 +15,6 @@ import itertools
 import nova.conf
 import nova.virt.configdrive
 import nova.virt.disk.vfs.guestfs
-import nova.virt.hyperv.eventhandler
-import nova.virt.hyperv.pathutils
-import nova.virt.hyperv.vif
-import nova.virt.hyperv.vmops
-import nova.virt.hyperv.volumeops
-import nova.virt.imagecache
 import nova.virt.libvirt.driver
 import nova.virt.libvirt.imagebackend
 import nova.virt.libvirt.imagecache
@@ -60,17 +54,8 @@ def list_opts():
         ('DEFAULT',
          itertools.chain(
              nova.virt.configdrive.configdrive_opts,
-             nova.virt.imagecache.imagecache_opts,
          )),
         ('guestfs', nova.virt.disk.vfs.guestfs.guestfs_opts),
-        ('hyperv',
-         itertools.chain(
-             nova.virt.hyperv.pathutils.hyperv_opts,
-             nova.virt.hyperv.vif.hyperv_opts,
-             nova.virt.hyperv.vmops.hyperv_opts,
-             nova.virt.hyperv.volumeops.hyper_volumeops_opts,
-             nova.virt.hyperv.eventhandler.hyperv_opts
-         )),
         ('libvirt',
          itertools.chain(
              nova.virt.libvirt.driver.libvirt_opts,
@@ -103,8 +88,6 @@ def list_opts():
         ('xenserver',
          itertools.chain(
              [nova.virt.xenapi.vif.xenapi_ovs_integration_bridge_opt],
-             nova.virt.xenapi.agent.xenapi_agent_opts,
-             nova.virt.xenapi.client.session.xenapi_session_opts,
              nova.virt.xenapi.driver.xenapi_opts,
              nova.virt.xenapi.image.bittorrent.xenapi_torrent_opts,
              nova.virt.xenapi.pool.xenapi_pool_opts,

@@ -572,7 +572,7 @@ class LibvirtDriver(driver.ComputeDriver):
         self.job_tracker = instancejobtracker.InstanceJobTracker()
         self._remotefs = remotefs.RemoteFilesystem()
 
-        self._live_migration_flags = self._block_migration_flags = None
+        self._live_migration_flags = self._block_migration_flags = 0
 
     def _get_volume_drivers(self):
         return libvirt_volume_drivers
@@ -2720,7 +2720,9 @@ class LibvirtDriver(driver.ComputeDriver):
         """
         instance_dir = libvirt_utils.get_instance_path(instance)
         unrescue_xml_path = os.path.join(instance_dir, 'unrescue.xml')
+        xml_path = os.path.join(instance_dir, 'libvirt.xml')
         xml = libvirt_utils.load_file(unrescue_xml_path)
+        libvirt_utils.write_to_file(xml_path, xml)
         guest = self._host.get_guest(instance)
 
         # TODO(sahid): We are converting all calls from a
@@ -3408,16 +3410,13 @@ class LibvirtDriver(driver.ComputeDriver):
                 raise exception.PciDeviceDetachFailed(reason=reason,
                                                       dev=network_info)
 
-            image_meta = objects.ImageMeta.from_instance(instance)
+            # In case of SR-IOV vif types we create pci request per SR-IOV port
+            # Therefore we can trust that pci_slot value in the vif is correct.
             sriov_pci_addresses = [
-                self.vif_driver.get_config(instance,
-                                           vif,
-                                           image_meta,
-                                           instance.flavor,
-                                           CONF.libvirt.virt_type,
-                                           self._host).source_dev
+                vif['profile']['pci_slot']
                 for vif in network_info
-                if vif['vnic_type'] in network_model.VNIC_TYPES_SRIOV
+                if vif['vnic_type'] in network_model.VNIC_TYPES_SRIOV and
+                   vif['profile'].get('pci_slot') is not None
             ]
 
             # use detach_pci_devices to avoid failure in case of
