@@ -54,8 +54,6 @@ CONF.register_opts(db_opts)
 #_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
 _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 
-CONF.log_opt_values(LOG, logging.DEBUG)
-
 IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
 # The maximum value a signed INT type may have
 MAX_INT = 0x7FFFFFFF
