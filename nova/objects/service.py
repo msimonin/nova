@@ -331,6 +331,7 @@ class Service(base.NovaPersistentObject, base.NovaObject,
     @staticmethod
     @db.select_db_reader_mode
     def _db_service_get_minimum_version(context, binary, use_slave=False):
+        LOG.error("in _db_service_get_minimum_version")
         return db.service_get_minimum_version(context, binary)
 
     @base.remotable_classmethod
@@ -345,6 +346,7 @@ class Service(base.NovaPersistentObject, base.NovaObject,
             cached_version = cls._MIN_VERSION_CACHE.get(binary)
             if cached_version:
                 return cached_version
+        LOG.error("BEFORE GET MINI")
         version = cls._db_service_get_minimum_version(context, binary,
                                                       use_slave=use_slave)
         if version is None:
