@@ -69,6 +69,9 @@ from nova.objects import fields
 from nova import quota
 from nova import safe_utils
 
+from nova.db.discovery.context import RomeContextManager
+from nova.db.discovery.context import RomeRequestContext
+
 def to_list(x, default=None):
     if x is None:
         return default
@@ -189,41 +192,7 @@ def create_context_manager(connection=None):
     return ctxt_mgr
 
 
-from nova.context import RequestContext
 import functools
-
-class RomeTransactionContext():
-    def __init__(self, user_id=None, project_id=None,
-                 is_admin=None, read_deleted="no",
-                 roles=None, remote_address=None, timestamp=None,
-                 request_id=None, auth_token=None, overwrite=True,
-                 quota_class=None, user_name=None, project_name=None,
-                 service_catalog=None, instance_lock_checked=False,
-                 user_auth_plugin=None, mode=None, **kwargs):
-        self.is_admin = is_admin if is_admin else False
-        self.user_id = user_id
-        self.project_id = project_id
-        self.read_deleted = read_deleted
-        if not mode:
-            self.writer = RomeTransactionContext(mode="writer")
-            self.reader = RomeTransactionContext(mode="reader")
-        pass
-
-class RomeRequestContext(object):
-    def __init__(self, *args, **kwargs):
-        # self.ctxt = RequestContext(*args, **kwargs)
-        self.session = RomeSession()
-
-    def load_context(self, context):
-        filter_attributes = ["session"]
-        for (attr_name, attr_value) in context.__dict__.iteritems():
-            if attr_name not in filter_attributes:
-                # print(attr_name)
-                setattr(self, attr_name, attr_value)
-
-class RomeContextManager(object):
-    pass
-
 from lib.rome.core.session.session import DBDeadlock
 
 def wrapp_with_session(f):
@@ -435,9 +404,8 @@ def select_db_reader_mode(f):
 from lib.rome.core.orm.query import or_
 from lib.rome.core.orm.query import and_
 from lib.rome.core.orm.query import Query as RomeQuery
-from lib.rome.core.session.session import Session as RomeSession
-from lib.rome.core.session.session import OldSession as OldRomeSession
-from lib.rome.core.session.session import SessionDeadlock
+
+
 from nova.db.discovery import models
 from collections import namedtuple
 import random
@@ -1007,8 +975,15 @@ def floating_ip_allocate_address(context, project_id, pool,
 @wrapp_with_session
 def floating_ip_bulk_create(context, ips, want_result=True):
     try:
-        tab = models.FloatingIp().__table__
-        context.session.execute(tab.insert(), ips)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # tab = models.FloatingIp().__table__
+        # context.session.execute(tab.insert(), ips)
+        for ip in ips:
+            i = models.FloatingIp()
+            i.update(ip)
+            context.session.add(i)
+
     except db_exc.DBDuplicateEntry as e:
         raise exception.FloatingIpExists(address=e.value)
 
@@ -1437,8 +1412,15 @@ def fixed_ip_create(context, values):
 @wrapp_with_session
 def fixed_ip_bulk_create(context, ips):
     try:
-        tab = models.FixedIp.__table__
-        context.session.execute(tab.insert(), ips)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # tab = models.FixedIp.__table__
+        # context.session.execute(tab.insert(), ips)
+        for ip in ips:
+            i = models.FixedIp()
+            i.update(ip)
+            context.session.add(i)
+
     except db_exc.DBDuplicateEntry as e:
         raise exception.FixedIpExists(address=e.value)
 
@@ -5759,8 +5741,10 @@ def aggregate_create(context, values, metadata=None):
         # NOTE(pkholkin): '_metadata' attribute was updated during
         # 'aggregate_metadata_add' method, so it should be expired and
         # read from db
-        context.session.expire(aggregate, ['_metadata'])
+        #context.session.expire(aggregate, ['_metadata'])
         aggregate._metadata
+
+
 
     return aggregate
 
@@ -5953,9 +5937,15 @@ def aggregate_metadata_add(context, aggregate_id, metadata, set_delete=False,
                                     "value": value,
                                     "aggregate_id": aggregate_id})
             if new_entries:
-                context.session.execute(
-                    models.AggregateMetadata.__table__.insert(),
-                    new_entries)
+                # NOTE(msimonin): context.session.execute isn't supported
+                # by ROME
+                # context.session.execute(
+                #     models.AggregateMetadata.__table__.insert(),
+                #     new_entries)
+                for new_entry in new_entries:
+                    am = models.AggregateMetadata()
+                    am.update(new_entry)
+                    context.session.add(am)
 
             return metadata
         except db_exc.DBDuplicateEntry:
@@ -6366,6 +6356,7 @@ def _archive_deleted_rows_for_table(tablename, max_rows):
     try:
         # Group the insert and delete in a transaction.
         with conn.begin():
+            # NOTE(msimonin): Not sure how to handle the following
             conn.execute(insert)
             result_delete = conn.execute(delete_statement)
     except db_exc.DBReferenceError as ex:
@@ -6853,9 +6844,16 @@ def instance_tag_set(context, instance_uuid, tags):
             synchronize_session=False)
 
     if to_add:
-        data = [
-            {'resource_id': instance_uuid, 'tag': tag} for tag in to_add]
-        context.session.execute(models.Tag.__table__.insert(), data)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # data = [
+        #     {'resource_id': instance_uuid, 'tag': tag} for tag in to_add]
+        # context.session.execute(models.Tag.__table__.insert(), data)
+        for t in to_add:
+            tag = models.Tag()
+            tag.id = instance_uuid + t
+            tag.update({'resource_id': instance_uuid, 'tag': t})
+            context.session.add(tag)
 
     return context.session.query(models.Tag).filter_by(
         resource_id=instance_uuid).all()

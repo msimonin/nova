@@ -55,7 +55,7 @@ from nova import block_device
 from nova.compute import arch
 from nova.compute import task_states
 from nova.compute import vm_states
-from nova import context
+#from nova import context
 from nova import db
 # from nova.db.sqlalchemy import api as sqlalchemy_api
 # from nova.db.sqlalchemy import models
@@ -71,7 +71,7 @@ from nova import test
 from nova.tests.unit import matchers
 from nova.tests import uuidsentinel
 from nova import utils
-from nova.db.discovery.api import RomeTransactionContext
+from nova.db.discovery import context
 
 CONF = cfg.CONF
 CONF.import_opt('reserved_host_memory_mb', 'nova.compute.resource_tracker')
