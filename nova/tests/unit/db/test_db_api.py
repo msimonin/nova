@@ -2812,6 +2812,23 @@ class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
         # Make sure instance faults is deleted as well
         self.assertEqual(0, len(faults[uuid]))
 
+    def test_delete_instance_group_member_on_instance_destroy(self):
+        ctxt = context.get_admin_context()
+        uuid = str(stdlib_uuid.uuid4())
+        db.instance_create(ctxt, {'uuid': uuid})
+        values = {'name': 'fake_name', 'user_id': 'fake',
+                  'project_id': 'fake'}
+        group = db.instance_group_create(ctxt, values,
+                                         policies=None, members=[uuid])
+        self.assertEqual([uuid],
+                         db.instance_group_members_get(ctxt,
+                                                       group['uuid']))
+
+        db.instance_destroy(ctxt, uuid)
+        self.assertEqual([],
+                         db.instance_group_members_get(ctxt,
+                                                       group['uuid']))
+
     def test_instance_update_and_get_original(self):
         instance = self.create_instance_with_args(vm_state='building')
         (old_ref, new_ref) = db.instance_update_and_get_original(self.ctxt,
@@ -3385,8 +3402,9 @@ class ServiceTestCase(test.TestCase, ModelsObjectComparatorMixin):
         self._create_service({'version': 3,
                               'host': 'host2',
                               'binary': 'compute'})
-        self.assertEqual(2, db.service_get_minimum_version(self.ctxt,
-                                                           'compute'))
+        self.assertEqual({'compute': 2},
+                         db.service_get_minimum_version(self.ctxt,
+                                                        ['compute']))
 
     def test_service_get_not_found_exception(self):
         self.assertRaises(exception.ServiceNotFound,
@@ -7446,7 +7464,7 @@ class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
         # entries under the new resource-providers schema return non-None
         # values for the inv_* fields in the returned list of dicts from
         # _compute_node_select().
-        nodes = sqlalchemy_api._compute_node_select(self.ctxt)
+        nodes = sqlalchemy_api._compute_node_fetchall(self.ctxt)
         self.assertEqual(1, len(nodes))
         node = nodes[0]
         self.assertIsNone(node['inv_memory_mb'])
@@ -7535,12 +7553,6 @@ class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
         self.assertEqual(64, node['inv_memory_mb_used'])
         self.assertEqual(16, node['inv_vcpus'])
         self.assertEqual(2, node['inv_vcpus_used'])
-
-    def test_compute_node_exec(self):
-        results = sqlalchemy_api._compute_node_select(self.ctxt)
-        self.assertIsInstance(results, list)
-        self.assertEqual(1, len(results))
-        self.assertIsInstance(results[0], dict)
 
     def test_compute_node_get_all_deleted_compute_node(self):
         # Create a service and compute node and ensure we can find its stats;
@@ -7745,11 +7757,83 @@ class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
         self._assertEqualListsOfObjects(nodes_created, nodes,
                         ignored_keys=self._ignored_keys + ['stats', 'service'])
 
-    def test_compute_node_statistics(self):
+    def test_compute_node_statistics_no_resource_providers(self):
+        service_dict = dict(host='hostA', binary='nova-compute',
+                            topic=CONF.compute_topic, report_count=1,
+                            disabled=False)
+        service = db.service_create(self.ctxt, service_dict)
+        # Define the various values for the new compute node
+        new_vcpus = 4
+        new_memory_mb = 4096
+        new_local_gb = 2048
+        new_vcpus_used = 1
+        new_memory_mb_used = 1024
+        new_local_gb_used = 100
+        new_free_ram_mb = 3072
+        new_free_disk_gb = 1948
+        new_running_vms = 1
+        new_current_workload = 0
+
+        # Calculate the expected values by adding the values for the new
+        # compute node to those for self.item
+        itm = self.item
+        exp_count = 2
+        exp_vcpus = new_vcpus + itm['vcpus']
+        exp_memory_mb = new_memory_mb + itm['memory_mb']
+        exp_local_gb = new_local_gb + itm['local_gb']
+        exp_vcpus_used = new_vcpus_used + itm['vcpus_used']
+        exp_memory_mb_used = new_memory_mb_used + itm['memory_mb_used']
+        exp_local_gb_used = new_local_gb_used + itm['local_gb_used']
+        exp_free_ram_mb = new_free_ram_mb + itm['free_ram_mb']
+        exp_free_disk_gb = new_free_disk_gb + itm['free_disk_gb']
+        exp_running_vms = new_running_vms + itm['running_vms']
+        exp_current_workload = new_current_workload + itm['current_workload']
+
+        # Create the new compute node
+        compute_node_dict = dict(vcpus=new_vcpus,
+                                 memory_mb=new_memory_mb,
+                                 local_gb=new_local_gb,
+                                 uuid=uuidsentinel.fake_compute_node,
+                                 vcpus_used=new_vcpus_used,
+                                 memory_mb_used=new_memory_mb_used,
+                                 local_gb_used=new_local_gb_used,
+                                 free_ram_mb=new_free_ram_mb,
+                                 free_disk_gb=new_free_disk_gb,
+                                 hypervisor_type="xen",
+                                 hypervisor_version=1,
+                                 cpu_info="",
+                                 running_vms=new_running_vms,
+                                 current_workload=new_current_workload,
+                                 service_id=service['id'],
+                                 host=service['host'],
+                                 disk_available_least=100,
+                                 hypervisor_hostname='abracadabra',
+                                 host_ip='127.0.0.2',
+                                 supported_instances='',
+                                 pci_stats='',
+                                 metrics='',
+                                 extra_resources='',
+                                 cpu_allocation_ratio=16.0,
+                                 ram_allocation_ratio=1.5,
+                                 disk_allocation_ratio=1.0,
+                                 stats='',
+                                 numa_topology='')
+        db.compute_node_create(self.ctxt, compute_node_dict)
+
+        # Get the stats, and make sure the stats agree with the expected
+        # amounts.
         stats = db.compute_node_statistics(self.ctxt)
-        self.assertEqual(stats.pop('count'), 1)
-        for k, v in stats.items():
-            self.assertEqual(v, self.item[k])
+        self.assertEqual(exp_count, stats['count'])
+        self.assertEqual(exp_vcpus, stats['vcpus'])
+        self.assertEqual(exp_memory_mb, stats['memory_mb'])
+        self.assertEqual(exp_local_gb, stats['local_gb'])
+        self.assertEqual(exp_vcpus_used, stats['vcpus_used'])
+        self.assertEqual(exp_memory_mb_used, stats['memory_mb_used'])
+        self.assertEqual(exp_local_gb_used, stats['local_gb_used'])
+        self.assertEqual(exp_free_ram_mb, stats['free_ram_mb'])
+        self.assertEqual(exp_free_disk_gb, stats['free_disk_gb'])
+        self.assertEqual(exp_running_vms, stats['running_vms'])
+        self.assertEqual(exp_current_workload, stats['current_workload'])
 
     def test_compute_node_statistics_disabled_service(self):
         serv = db.service_get_by_host_and_topic(

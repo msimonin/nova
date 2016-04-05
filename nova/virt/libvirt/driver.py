@@ -318,7 +318,6 @@ CONF.import_opt('live_migration_retry_count', 'nova.compute.manager')
 CONF.import_opt('server_proxyclient_address', 'nova.spice', group='spice')
 CONF.import_opt('hw_disk_discard', 'nova.virt.libvirt.imagebackend',
                 group='libvirt')
-CONF.import_group('workarounds', 'nova.utils')
 CONF.import_opt('iscsi_use_multipath', 'nova.virt.libvirt.volume.iscsi',
                 group='libvirt')
 
@@ -3342,7 +3341,7 @@ class LibvirtDriver(driver.ComputeDriver):
                 for hdev in [d for d in guest_config.devices
                     if isinstance(d, vconfig.LibvirtConfigGuestHostdevPCI)]:
                     hdbsf = [hdev.domain, hdev.bus, hdev.slot, hdev.function]
-                    dbsf = pci_utils.parse_address(dev['address'])
+                    dbsf = pci_utils.parse_address(dev.address)
                     if [int(x, 16) for x in hdbsf] ==\
                             [int(x, 16) for x in dbsf]:
                         raise exception.PciDeviceDetachFailed(reason=
