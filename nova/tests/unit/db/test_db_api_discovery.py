@@ -1335,7 +1335,7 @@ class AggregateDBApiTestCase(test.TestCase):
 
     def tearDown(self):
         "Hook method for deconstructing the test fixture after testing it."
-        super(AggregateDBApiTestCase, self).tearDown() 
+        super(AggregateDBApiTestCase, self).tearDown()
         classes = [models.AggregateMetadata, models.Aggregate, models.AggregateHost]
         for c in classes:
             for o in Query(c).all():
@@ -1498,7 +1498,9 @@ class AggregateDBApiTestCase(test.TestCase):
         self.assertEqual(0, len(expected))
         aggregate = db.aggregate_get(ctxt.elevated(read_deleted='yes'),
                                      result['id'])
-        self.assertEqual(aggregate['deleted'], result['id'])
+        #NOTE(msimonin): deleted is set to 1 (not the id in ROME)
+        #self.assertEqual(aggregate['deleted'], result['id'])
+        self.assertEqual(aggregate['deleted'], 1)
 
     def test_aggregate_update(self):
         ctxt = context.get_admin_context()

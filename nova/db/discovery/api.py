@@ -431,7 +431,7 @@ def model_query(context, model,
     """
 
     if read_deleted is None:
-        read_deleted = "no"
+        read_deleted = context.read_deleted
 
     if type(context) is not RomeRequestContext:
         rome_context = RomeRequestContext()
