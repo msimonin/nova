@@ -31,8 +31,8 @@ from nova.conf import cert
 from nova.conf import cloudpipe
 from nova.conf import compute
 from nova.conf import conductor
-# from nova.conf import configdrive
-# from nova.conf import console
+from nova.conf import configdrive
+from nova.conf import console
 from nova.conf import consoleauth
 # from nova.conf import cors
 # from nova.conf import cors.subdomain
@@ -48,6 +48,7 @@ from nova.conf import hyperv
 # from nova.conf import image
 # from nova.conf import imagecache
 from nova.conf import image_file_url
+from nova.conf import ipv6
 from nova.conf import ironic
 from nova.conf import keymgr
 # from nova.conf import keystone_authtoken
@@ -57,10 +58,12 @@ from nova.conf import mks
 # from nova.conf import metadata
 # from nova.conf import metrics
 from nova.conf import network
-# from nova.conf import neutron
-# from nova.conf import notification
+from nova.conf import neutron
+from nova.conf import notifications
+from nova.conf import novnc
 # from nova.conf import osapi_v21
 from nova.conf import pci
+from nova.conf import quota
 from nova.conf import rdp
 from nova.conf import remote_debug
 from nova.conf import rpc
@@ -73,13 +76,13 @@ from nova.conf import service
 # from nova.conf import trusted_computing
 from nova.conf import upgrade_levels
 from nova.conf import virt
-# from nova.conf import vmware
+from nova.conf import vmware
 from nova.conf import vnc
 # from nova.conf import volume
 from nova.conf import workarounds
 from nova.conf import wsgi
 from nova.conf import xenserver
-# from nova.conf import xvp
+from nova.conf import xvp
 # from nova.conf import zookeeper
 
 CONF = cfg.CONF
@@ -96,8 +99,8 @@ cert.register_opts(CONF)
 cloudpipe.register_opts(CONF)
 compute.register_opts(CONF)
 conductor.register_opts(CONF)
-# configdrive.register_opts(CONF)
-# console.register_opts(CONF)
+configdrive.register_opts(CONF)
+console.register_opts(CONF)
 consoleauth.register_opts(CONF)
 # cors.register_opts(CONF)
 # cors.subdomain.register_opts(CONF)
@@ -114,6 +117,7 @@ mks.register_opts(CONF)
 # image.register_opts(CONF)
 # imagecache.register_opts(CONF)
 image_file_url.register_opts(CONF)
+ipv6.register_opts(CONF)
 ironic.register_opts(CONF)
 keymgr.register_opts(CONF)
 # keystone_authtoken.register_opts(CONF)
@@ -122,10 +126,12 @@ keymgr.register_opts(CONF)
 # metadata.register_opts(CONF)
 # metrics.register_opts(CONF)
 network.register_opts(CONF)
-# neutron.register_opts(CONF)
-# notification.register_opts(CONF)
+neutron.register_opts(CONF)
+notifications.register_opts(CONF)
+novnc.register_opts(CONF)
 # osapi_v21.register_opts(CONF)
 pci.register_opts(CONF)
+quota.register_opts(CONF)
 rdp.register_opts(CONF)
 rpc.register_opts(CONF)
 scheduler.register_opts(CONF)
@@ -137,13 +143,13 @@ service.register_opts(CONF)
 # trusted_computing.register_opts(CONF)
 upgrade_levels.register_opts(CONF)
 virt.register_opts(CONF)
-# vmware.register_opts(CONF)
+vmware.register_opts(CONF)
 vnc.register_opts(CONF)
 # volume.register_opts(CONF)
 workarounds.register_opts(CONF)
 wsgi.register_opts(CONF)
 xenserver.register_opts(CONF)
-# xvp.register_opts(CONF)
+xvp.register_opts(CONF)
 # zookeeper.register_opts(CONF)
 
 remote_debug.register_cli_opts(CONF)

@@ -14,27 +14,21 @@ import itertools
 
 import nova.baserpc
 import nova.cloudpipe.pipelib
-import nova.cmd.novnc
 import nova.cmd.serialproxy
 import nova.cmd.spicehtml5proxy
 import nova.conductor.rpcapi
 import nova.conductor.tasks.live_migrate
 import nova.conf
-import nova.console.manager
 import nova.console.rpcapi
 import nova.console.serial
-import nova.console.xvp
 import nova.consoleauth.rpcapi
 import nova.db.api
 import nova.db.base
 import nova.db.sqlalchemy.api
 import nova.exception
 import nova.image.download.file
-import nova.ipv6.api
 import nova.netconf
-import nova.notifications
 import nova.paths
-import nova.quota
 import nova.servicegroup.api
 import nova.spice
 import nova.volume
@@ -47,19 +41,12 @@ def list_opts():
          itertools.chain(
              [nova.conductor.tasks.live_migrate.migrate_opt],
              [nova.db.base.db_driver_opt],
-             [nova.ipv6.api.ipv6_backend_opt],
              [nova.servicegroup.api.servicegroup_driver_opt],
-             nova.cmd.novnc.opts,
-             nova.console.manager.console_manager_opts,
-             nova.console.rpcapi.rpcapi_opts,
-             nova.console.xvp.xvp_opts,
              nova.db.api.db_opts,
              nova.db.sqlalchemy.api.db_opts,
              nova.exception.exc_log_opts,
              nova.netconf.netconf_opts,
-             nova.notifications.notify_opts,
              nova.paths.path_opts,
-             nova.quota.quota_opts,
              nova.volume._volume_opts,
          )),
         ('cinder', nova.volume.cinder.cinder_opts),

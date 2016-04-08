@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import itertools
-
 from oslo_config import cfg
+
+from nova import paths
 
 
 network_opts = [
@@ -91,18 +91,144 @@ network_opts = [
                default="nova.network.l3.LinuxNetL3",
                help="Indicates underlying L3 management library"),
     cfg.BoolOpt("share_dhcp_address",
-                default=False,
-                deprecated_for_removal=True,
-                help="DEPRECATED: THIS VALUE SHOULD BE SET WHEN CREATING THE "
-                     "NETWORK. If True in multi_host mode, all compute hosts "
-                     "share the same dhcp address. The same IP address used "
-                     "for DHCP will be added on each nova-network node which "
-                     "is only visible to the vms on the same host."),
+            default=False,
+            deprecated_for_removal=True,
+            help="""
+DEPRECATED: THIS VALUE SHOULD BE SET WHEN CREATING THE NETWORK.
+
+If True in multi_host mode, all compute hosts share the same dhcp address. The
+same IP address used for DHCP will be added on each nova-network node which is
+only visible to the VMs on the same host.
+
+The use of this configuration has been deprecated and may be removed in any
+release after Mitaka. It is recommended that instead of relying on this option,
+an explicit value should be passed to 'create_networks()' as a keyword argument
+with the name 'share_address'.
+
+* Services that use this:
+
+    ``nova-network``
+
+* Related options:
+
+    None
+"""),
+
     # NOTE(mriedem): Remove network_device_mtu in Newton.
     cfg.IntOpt("network_device_mtu",
-               deprecated_for_removal=True,
-               help="DEPRECATED: THIS VALUE SHOULD BE SET WHEN CREATING THE "
-                    "NETWORK. MTU setting for network interface."),
+            deprecated_for_removal=True,
+            help="""
+DEPRECATED: THIS VALUE SHOULD BE SET WHEN CREATING THE NETWORK.
+
+MTU (Maximum Transmission Unit) setting for a network interface.
+
+The use of this configuration has been deprecated and may be removed in any
+release after Mitaka. It is recommended that instead of relying on this option,
+an explicit value should be passed to 'create_networks()' as a keyword argument
+with the name 'mtu'.
+
+* Services that use this:
+
+    ``nova-network``
+
+* Related options:
+
+    None
+"""),
+]
+
+linux_net_opts = [
+    cfg.MultiStrOpt('dhcpbridge_flagfile',
+                    default=['/etc/nova/nova-dhcpbridge.conf'],
+                    help='Location of flagfiles for dhcpbridge'),
+    cfg.StrOpt('networks_path',
+               default=paths.state_path_def('networks'),
+               help='Location to keep network config files'),
+    cfg.StrOpt('public_interface',
+               default='eth0',
+               help='Interface for public IP addresses'),
+    cfg.StrOpt('dhcpbridge',
+               default=paths.bindir_def('nova-dhcpbridge'),
+               help='Location of nova-dhcpbridge'),
+    cfg.StrOpt('routing_source_ip',
+               default='$my_ip',
+               help='Public IP of network host'),
+    cfg.IntOpt('dhcp_lease_time',
+               default=86400,
+               help='Lifetime of a DHCP lease in seconds'),
+    cfg.MultiStrOpt('dns_server',
+                    default=[],
+                    help='If set, uses specific DNS server for dnsmasq. Can'
+                         ' be specified multiple times.'),
+    cfg.BoolOpt('use_network_dns_servers',
+                default=False,
+                help='If set, uses the dns1 and dns2 from the network ref.'
+                     ' as dns servers.'),
+    cfg.ListOpt('dmz_cidr',
+               default=[],
+               help='A list of dmz ranges that should be accepted'),
+    cfg.MultiStrOpt('force_snat_range',
+               default=[],
+               help='Traffic to this range will always be snatted to the '
+                    'fallback IP, even if it would normally be bridged out '
+                    'of the node. Can be specified multiple times.'),
+    cfg.StrOpt('dnsmasq_config_file',
+               default='',
+               help='Override the default dnsmasq settings with this file'),
+    cfg.StrOpt('linuxnet_interface_driver',
+               default='nova.network.linux_net.LinuxBridgeInterfaceDriver',
+               help='Driver used to create ethernet devices.'),
+    cfg.StrOpt('linuxnet_ovs_integration_bridge',
+               default='br-int',
+               help='Name of Open vSwitch bridge used with linuxnet'),
+    cfg.BoolOpt('send_arp_for_ha',
+                default=False,
+                help='Send gratuitous ARPs for HA setup'),
+    cfg.IntOpt('send_arp_for_ha_count',
+               default=3,
+               help='Send this many gratuitous ARPs for HA setup'),
+    cfg.BoolOpt('use_single_default_gateway',
+                default=False,
+                help='Use single default gateway. Only first nic of vm will '
+                     'get default gateway from dhcp server'),
+    cfg.MultiStrOpt('forward_bridge_interface',
+                    default=['all'],
+                    help='An interface that bridges can forward to. If this '
+                         'is set to all then all traffic will be forwarded. '
+                         'Can be specified multiple times.'),
+    cfg.StrOpt('metadata_host',
+               default='$my_ip',
+               help='The IP address for the metadata API server'),
+    cfg.IntOpt('metadata_port',
+               default=8775,
+               min=1,
+               max=65535,
+               help='The port for the metadata API port'),
+    cfg.StrOpt('iptables_top_regex',
+               default='',
+               help='Regular expression to match the iptables rule that '
+                    'should always be on the top.'),
+    cfg.StrOpt('iptables_bottom_regex',
+               default='',
+               help='Regular expression to match the iptables rule that '
+                    'should always be on the bottom.'),
+    cfg.StrOpt('iptables_drop_action',
+               default='DROP',
+               help='The table that iptables to jump to when a packet is '
+                    'to be dropped.'),
+    cfg.IntOpt('ovs_vsctl_timeout',
+               default=120,
+               help='Amount of time, in seconds, that ovs_vsctl should wait '
+                    'for a response from the database. 0 is to wait forever.'),
+    cfg.BoolOpt('fake_network',
+                default=False,
+                help='If passed, use fake network devices and addresses'),
+    cfg.IntOpt('ebtables_exec_attempts',
+               default=3,
+               help='Number of times to retry ebtables commands on failure.'),
+    cfg.FloatOpt('ebtables_retry_interval',
+                 default=1.0,
+                 help='Number of seconds to wait between ebtables retries.'),
 ]
 
 
@@ -144,13 +270,13 @@ ldap_dns_opts = [
                      'Statement of Authority'),
 ]
 
-ALL_DEFAULT_OPTS = list(itertools.chain(
-                   network_opts,
-                   ldap_dns_opts))
+ALL_DEFAULT_OPTS = linux_net_opts + network_opts + ldap_dns_opts
 
 
 def register_opts(conf):
-    conf.register_opts(ALL_DEFAULT_OPTS)
+    conf.register_opts(linux_net_opts)
+    conf.register_opts(network_opts)
+    conf.register_opts(ldap_dns_opts)
 
 
 def list_opts():

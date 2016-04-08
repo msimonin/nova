@@ -13,9 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import itertools
-
 from oslo_config import cfg
+from oslo_utils import units
 
 xenserver_group = cfg.OptGroup('xenserver', title='Xenserver Options')
 
@@ -232,10 +231,132 @@ xenapi_torrent_opts = [
 ]
 
 
-ALL_XENSERVER_OPTS = list(itertools.chain(
-                     xenapi_agent_opts,
-                     xenapi_session_opts,
-                     xenapi_torrent_opts))
+xenapi_vm_utils_opts = [
+    cfg.StrOpt('cache_images',
+               default='all',
+               choices=('all', 'some', 'none'),
+               help='Cache glance images locally. `all` will cache all'
+                    ' images, `some` will only cache images that have the'
+                    ' image_property `cache_in_nova=True`, and `none` turns'
+                    ' off caching entirely'),
+    cfg.IntOpt('image_compression_level',
+               min=1,
+               max=9,
+               help='Compression level for images, e.g., 9 for gzip -9.'
+                    ' Range is 1-9, 9 being most compressed but most CPU'
+                    ' intensive on dom0.'),
+    cfg.StrOpt('default_os_type',
+               default='linux',
+               help='Default OS type'),
+    cfg.IntOpt('block_device_creation_timeout',
+               default=10,
+               help='Time to wait for a block device to be created'),
+    cfg.IntOpt('max_kernel_ramdisk_size',
+               default=16 * units.Mi,
+               help='Maximum size in bytes of kernel or ramdisk images'),
+    cfg.StrOpt('sr_matching_filter',
+               default='default-sr:true',
+               help='Filter for finding the SR to be used to install guest '
+                    'instances on. To use the Local Storage in default '
+                    'XenServer/XCP installations set this flag to '
+                    'other-config:i18n-key=local-storage. To select an SR '
+                    'with a different matching criteria, you could set it to '
+                    'other-config:my_favorite_sr=true. On the other hand, to '
+                    'fall back on the Default SR, as displayed by XenCenter, '
+                    'set this flag to: default-sr:true'),
+    cfg.BoolOpt('sparse_copy',
+                default=True,
+                help='Whether to use sparse_copy for copying data on a '
+                     'resize down (False will use standard dd). This speeds '
+                     'up resizes down considerably since large runs of zeros '
+                     'won\'t have to be rsynced'),
+    cfg.IntOpt('num_vbd_unplug_retries',
+               default=10,
+               help='Maximum number of retries to unplug VBD. if <=0, '
+                    'should try once and no retry'),
+    cfg.StrOpt('torrent_images',
+               default='none',
+               choices=('all', 'some', 'none'),
+               help='Whether or not to download images via Bit Torrent.'),
+    cfg.StrOpt('ipxe_network_name',
+               help='Name of network to use for booting iPXE ISOs'),
+    cfg.StrOpt('ipxe_boot_menu_url',
+               help='URL to the iPXE boot menu'),
+    cfg.StrOpt('ipxe_mkisofs_cmd',
+               default='mkisofs',
+               help='Name and optionally path of the tool used for '
+                    'ISO image creation'),
+    ]
+
+
+xenapi_opts = [
+    cfg.StrOpt('connection_url',
+               help='URL for connection to XenServer/Xen Cloud Platform. '
+                    'A special value of unix://local can be used to connect '
+                    'to the local unix socket.  '
+                    'Required if compute_driver=xenapi.XenAPIDriver'),
+    cfg.StrOpt('connection_username',
+               default='root',
+               help='Username for connection to XenServer/Xen Cloud Platform. '
+                    'Used only if compute_driver=xenapi.XenAPIDriver'),
+    cfg.StrOpt('connection_password',
+               help='Password for connection to XenServer/Xen Cloud Platform. '
+                    'Used only if compute_driver=xenapi.XenAPIDriver',
+               secret=True),
+    cfg.FloatOpt('vhd_coalesce_poll_interval',
+                 default=5.0,
+                 help='The interval used for polling of coalescing vhds. '
+                      'Used only if compute_driver=xenapi.XenAPIDriver'),
+    cfg.BoolOpt('check_host',
+                default=True,
+                help='Ensure compute service is running on host XenAPI '
+                     'connects to.'),
+    cfg.IntOpt('vhd_coalesce_max_attempts',
+               default=20,
+               help='Max number of times to poll for VHD to coalesce. '
+                    'Used only if compute_driver=xenapi.XenAPIDriver'),
+    cfg.StrOpt('sr_base_path',
+               default='/var/run/sr-mount',
+               help='Base path to the storage repository'),
+    cfg.StrOpt('target_host',
+               help='The iSCSI Target Host'),
+    cfg.StrOpt('target_port',
+               default='3260',
+               help='The iSCSI Target Port, default is port 3260'),
+    cfg.StrOpt('iqn_prefix',
+               default='iqn.2010-10.org.openstack',
+               help='IQN Prefix'),
+    # NOTE(sirp): This is a work-around for a bug in Ubuntu Maverick,
+    # when we pull support for it, we should remove this
+    cfg.BoolOpt('remap_vbd_dev',
+                default=False,
+                help='Used to enable the remapping of VBD dev '
+                     '(Works around an issue in Ubuntu Maverick)'),
+    cfg.StrOpt('remap_vbd_dev_prefix',
+               default='sd',
+               help='Specify prefix to remap VBD dev to '
+                    '(ex. /dev/xvdb -> /dev/sdb)'),
+]
+
+xenapi_vmops_opts = [
+    cfg.IntOpt('running_timeout',
+               default=60,
+               help='Number of seconds to wait for instance '
+                    'to go to running state'),
+    cfg.StrOpt('vif_driver',
+               default='nova.virt.xenapi.vif.XenAPIBridgeDriver',
+               help='The XenAPI VIF driver using XenServer Network APIs.'),
+    cfg.StrOpt('image_upload_handler',
+                default='nova.virt.xenapi.image.glance.GlanceStore',
+               help='Dom0 plugin driver used to handle image uploads.'),
+    ]
+
+ALL_XENSERVER_OPTS = (xenapi_agent_opts +
+                      xenapi_session_opts +
+                      xenapi_torrent_opts +
+                      xenapi_vm_utils_opts +
+                      xenapi_opts +
+                      xenapi_vmops_opts)
 
 
 def register_opts(conf):

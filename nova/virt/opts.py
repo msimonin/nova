@@ -13,7 +13,6 @@
 import itertools
 
 import nova.conf
-import nova.virt.configdrive
 import nova.virt.libvirt.driver
 import nova.virt.libvirt.imagebackend
 import nova.virt.libvirt.imagecache
@@ -31,28 +30,15 @@ import nova.virt.libvirt.volume.remotefs
 import nova.virt.libvirt.volume.scality
 import nova.virt.libvirt.volume.smbfs
 import nova.virt.libvirt.volume.volume
-import nova.virt.vmwareapi.driver
-import nova.virt.vmwareapi.images
-import nova.virt.vmwareapi.vif
-import nova.virt.vmwareapi.vim_util
-import nova.virt.vmwareapi.vm_util
-import nova.virt.vmwareapi.vmops
 import nova.virt.xenapi.agent
-import nova.virt.xenapi.client.session
-import nova.virt.xenapi.driver
 import nova.virt.xenapi.pool
 import nova.virt.xenapi.vif
-import nova.virt.xenapi.vm_utils
 import nova.virt.xenapi.vmops
 import nova.virt.xenapi.volume_utils
 
 
 def list_opts():
     return [
-        ('DEFAULT',
-         itertools.chain(
-             nova.virt.configdrive.configdrive_opts,
-         )),
         ('libvirt',
          itertools.chain(
              nova.virt.libvirt.driver.libvirt_opts,
@@ -73,22 +59,10 @@ def list_opts():
              nova.virt.libvirt.volume.scality.volume_opts,
              nova.virt.libvirt.volume.smbfs.volume_opts,
          )),
-        ('vmware',
-         itertools.chain(
-             [nova.virt.vmwareapi.vim_util.vmware_opts],
-             nova.virt.vmwareapi.driver.spbm_opts,
-             nova.virt.vmwareapi.driver.vmwareapi_opts,
-             nova.virt.vmwareapi.vif.vmwareapi_vif_opts,
-             nova.virt.vmwareapi.vm_util.vmware_utils_opts,
-             nova.virt.vmwareapi.vmops.vmops_opts,
-         )),
         ('xenserver',
          itertools.chain(
              [nova.virt.xenapi.vif.xenapi_ovs_integration_bridge_opt],
-             nova.virt.xenapi.driver.xenapi_opts,
              nova.virt.xenapi.pool.xenapi_pool_opts,
-             nova.virt.xenapi.vm_utils.xenapi_vm_utils_opts,
-             nova.virt.xenapi.vmops.xenapi_vmops_opts,
              nova.virt.xenapi.volume_utils.xenapi_volume_utils_opts,
          )),
     ]

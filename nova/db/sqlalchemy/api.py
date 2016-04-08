@@ -61,6 +61,7 @@ from sqlalchemy.sql import true
 from nova import block_device
 from nova.compute import task_states
 from nova.compute import vm_states
+import nova.conf
 import nova.context
 from nova.db.sqlalchemy import models
 from nova import exception
@@ -125,11 +126,10 @@ api_db_opts = [
                     'SQLAlchemy.'),
 ]
 
-CONF = cfg.CONF
+CONF = nova.conf.CONF
 CONF.register_opts(db_opts)
 CONF.register_opts(oslo_db_options.database_opts, 'database')
 CONF.register_opts(api_db_opts, group='api_database')
-CONF.import_opt('until_refresh', 'nova.quota')
 
 LOG = logging.getLogger(__name__)
 
@@ -2248,16 +2248,24 @@ def instance_get_all_by_filters_sort(context, filters, limit=None, marker=None,
     of these tags:
 
     `tags` -- One or more strings that will be used to filter results
-            in an AND expression.
+            in an AND expression: T1 AND T2
 
     `tags-any` -- One or more strings that will be used to filter results in
-            an OR expression.
+            an OR expression: T1 OR T2
+
+    `not-tags` -- One or more strings that will be used to filter results in
+            an NOT AND expression: NOT (T1 AND T2)
+
+    `not-tags-any` -- One or more strings that will be used to filter results
+            in an NOT OR expression: NOT (T1 OR T2)
 
     Tags should be represented as list::
 
     |    filters = {
     |        'tags': [some-tag, some-another-tag],
-    |        'tags-any: [some-any-tag, some-another-any-tag]
+    |        'tags-any: [some-any-tag, some-another-any-tag],
+    |        'not-tags: [some-not-tag, some-another-not-tag],
+    |        'not-tags-any: [some-not-any-tag, some-another-not-any-tag]
     |    }
 
     """
@@ -2349,6 +2357,25 @@ def instance_get_all_by_filters_sort(context, filters, limit=None, marker=None,
         tag_alias = aliased(models.Tag)
         query_prefix = query_prefix.join(tag_alias, models.Instance.tags)
         query_prefix = query_prefix.filter(tag_alias.tag.in_(tags))
+
+    if 'not-tags' in filters:
+        tags = filters.pop('not-tags')
+        first_tag = tags.pop(0)
+        subq = query_prefix.session.query(models.Tag.resource_id)
+        subq = subq.join(models.Instance.tags)
+        subq = subq.filter(models.Tag.tag == first_tag)
+
+        for tag in tags:
+            tag_alias = aliased(models.Tag)
+            subq = subq.join(tag_alias, models.Instance.tags)
+            subq = subq.filter(tag_alias.tag == tag)
+
+        query_prefix = query_prefix.filter(~models.Instance.uuid.in_(subq))
+
+    if 'not-tags-any' in filters:
+        tags = filters.pop('not-tags-any')
+        query_prefix = query_prefix.filter(~models.Instance.tags.any(
+            models.Tag.tag.in_(tags)))
 
     if not context.is_admin:
         # If we're not admin context, add appropriate filter..
