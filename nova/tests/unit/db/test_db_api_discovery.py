@@ -137,7 +137,7 @@ class ModelsObjectComparatorMixin(object):
             self.assertIn(primitive, primitives1)
 
 
-class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
+class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
 
     """Tests for db.api.instance_* methods."""
 
@@ -157,6 +157,7 @@ class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
 
     def tearDown(self):
         "Hook method for deconstructing the test fixture after testing it."
+        super(InstanceTestCase, self).tearDown()
         classes = [models.InstanceGroupMember, models.Instance, models.InstanceSystemMetadata, models.InstanceMetadata, models.InstanceFault]
         for c in classes:
             for o in Query(c).all():
@@ -1381,7 +1382,7 @@ class AggregateDBApiTestCase(test.TestCase):
         ctxt = context.get_admin_context()
         result = _create_aggregate(context=ctxt)
         expected_metadata = db.aggregate_metadata_get(ctxt, result['id'])
-        self.assertThat(expected_metadata,
+        assertThat(expected_metadata,
                         matchers.DictMatches(_get_fake_aggr_metadata()))
 
     def test_aggregate_create_delete_create_with_metadata(self):
@@ -1736,4 +1737,935 @@ class AggregateDBApiTestCase(test.TestCase):
                           db.aggregate_host_delete,
                           ctxt, result['id'], _get_fake_aggr_hosts()[0])
 
+class BaseInstanceTypeTestCase(test.TestCase, ModelsObjectComparatorMixin):
+    def setUp(self):
+        super(BaseInstanceTypeTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.user_ctxt = context.RomeRequestContext('user', 'user')
 
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        super(BaseInstanceTypeTestCase, self).tearDown()
+        classes = [models.InstanceTypes, models.InstanceTypeProjects, models.InstanceTypeExtraSpecs]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
+    def _get_base_values(self):
+        return {
+            'name': 'fake_name',
+            'memory_mb': 512,
+            'vcpus': 1,
+            'root_gb': 10,
+            'ephemeral_gb': 10,
+            'flavorid': 'fake_flavor',
+            'swap': 0,
+            'rxtx_factor': 0.5,
+            'vcpu_weight': 1,
+            'disabled': False,
+            'is_public': True
+        }
+
+    def _create_flavor(self, values, projects=None):
+        v = self._get_base_values()
+        v.update(values)
+        return db.flavor_create(self.ctxt, v, projects)
+
+class InstanceTypeTestCase(BaseInstanceTypeTestCase):
+
+    def test_flavor_create(self):
+        flavor = self._create_flavor({})
+        ignored_keys = ['id', 'deleted', 'deleted_at', 'updated_at',
+                        'created_at', 'extra_specs']
+
+        self.assertIsNotNone(flavor['id'])
+        self._assertEqualObjects(flavor, self._get_base_values(),
+                                 ignored_keys)
+
+    def test_flavor_create_with_projects(self):
+        projects = ['fake-project1', 'fake-project2']
+        flavor = self._create_flavor({}, projects + ['fake-project2'])
+        access = db.flavor_access_get_by_flavor_id(self.ctxt,
+                                                   flavor['flavorid'])
+        self.assertEqual(projects, [x.project_id for x in access])
+
+    def test_flavor_destroy(self):
+        specs1 = {'a': '1', 'b': '2'}
+        flavor1 = self._create_flavor({'name': 'name1', 'flavorid': 'a1',
+                                       'extra_specs': specs1})
+        specs2 = {'c': '4', 'd': '3'}
+        flavor2 = self._create_flavor({'name': 'name2', 'flavorid': 'a2',
+                                       'extra_specs': specs2})
+
+        db.flavor_destroy(self.ctxt, 'name1')
+
+        self.assertRaises(exception.FlavorNotFound,
+                          db.flavor_get, self.ctxt, flavor1['id'])
+        real_specs1 = db.flavor_extra_specs_get(self.ctxt, flavor1['flavorid'])
+        self._assertEqualObjects(real_specs1, {})
+
+        r_flavor2 = db.flavor_get(self.ctxt, flavor2['id'])
+        self._assertEqualObjects(flavor2, r_flavor2, 'extra_specs')
+
+    def test_flavor_destroy_not_found(self):
+        self.assertRaises(exception.FlavorNotFound,
+                          db.flavor_destroy, self.ctxt, 'nonexists')
+
+    def test_flavor_create_duplicate_name(self):
+        self._create_flavor({})
+        self.assertRaises(exception.FlavorExists,
+                          self._create_flavor,
+                          {'flavorid': 'some_random_flavor'})
+
+    def test_flavor_create_duplicate_flavorid(self):
+        self._create_flavor({})
+        self.assertRaises(exception.FlavorIdExists,
+                          self._create_flavor,
+                          {'name': 'some_random_name'})
+
+    def test_flavor_create_with_extra_specs(self):
+        extra_specs = dict(a='abc', b='def', c='ghi')
+        flavor = self._create_flavor({'extra_specs': extra_specs})
+        ignored_keys = ['id', 'deleted', 'deleted_at', 'updated_at',
+                        'created_at', 'extra_specs']
+
+        self._assertEqualObjects(flavor, self._get_base_values(),
+                                 ignored_keys)
+        self._assertEqualObjects(extra_specs, flavor['extra_specs'])
+
+    @mock.patch('sqlalchemy.orm.query.Query.all', return_value=[])
+    def test_flavor_create_with_extra_specs_duplicate(self, mock_all):
+        extra_specs = dict(key='value')
+        flavorid = 'flavorid'
+        self._create_flavor({'flavorid': flavorid, 'extra_specs': extra_specs})
+
+        self.assertRaises(exception.FlavorExtraSpecUpdateCreateFailed,
+                          db.flavor_extra_specs_update_or_create,
+                          self.ctxt, flavorid, extra_specs)
+
+    def test_flavor_get_all(self):
+        # NOTE(boris-42): Remove base instance types
+        for it in db.flavor_get_all(self.ctxt):
+            db.flavor_destroy(self.ctxt, it['name'])
+
+        flavors = [
+            {'root_gb': 600, 'memory_mb': 100, 'disabled': True,
+             'is_public': True, 'name': 'a1', 'flavorid': 'f1'},
+            {'root_gb': 500, 'memory_mb': 200, 'disabled': True,
+             'is_public': True, 'name': 'a2', 'flavorid': 'f2'},
+            {'root_gb': 400, 'memory_mb': 300, 'disabled': False,
+             'is_public': True, 'name': 'a3', 'flavorid': 'f3'},
+            {'root_gb': 300, 'memory_mb': 400, 'disabled': False,
+             'is_public': False, 'name': 'a4', 'flavorid': 'f4'},
+            {'root_gb': 200, 'memory_mb': 500, 'disabled': True,
+             'is_public': False, 'name': 'a5', 'flavorid': 'f5'},
+            {'root_gb': 100, 'memory_mb': 600, 'disabled': True,
+             'is_public': False, 'name': 'a6', 'flavorid': 'f6'}
+        ]
+        flavors = [self._create_flavor(it) for it in flavors]
+
+        lambda_filters = {
+            'min_memory_mb': lambda it, v: it['memory_mb'] >= v,
+            'min_root_gb': lambda it, v: it['root_gb'] >= v,
+            'disabled': lambda it, v: it['disabled'] == v,
+            'is_public': lambda it, v: (v is None or it['is_public'] == v)
+        }
+
+        mem_filts = [{'min_memory_mb': x} for x in [100, 350, 550, 650]]
+        root_filts = [{'min_root_gb': x} for x in [100, 350, 550, 650]]
+        disabled_filts = [{'disabled': x} for x in [True, False]]
+        is_public_filts = [{'is_public': x} for x in [True, False, None]]
+
+        def assert_multi_filter_flavor_get(filters=None):
+            if filters is None:
+                filters = {}
+
+            expected_it = flavors
+            for name, value in filters.items():
+                filt = lambda it: lambda_filters[name](it, value)
+                expected_it = list(filter(filt, expected_it))
+
+            real_it = db.flavor_get_all(self.ctxt, filters=filters)
+            self._assertEqualListsOfObjects(expected_it, real_it)
+
+        # no filter
+        assert_multi_filter_flavor_get()
+
+        # test only with one filter
+        for filt in mem_filts:
+            assert_multi_filter_flavor_get(filt)
+        for filt in root_filts:
+            assert_multi_filter_flavor_get(filt)
+        for filt in disabled_filts:
+            assert_multi_filter_flavor_get(filt)
+        for filt in is_public_filts:
+            assert_multi_filter_flavor_get(filt)
+
+        # test all filters together
+        for mem in mem_filts:
+            for root in root_filts:
+                for disabled in disabled_filts:
+                    for is_public in is_public_filts:
+                        filts = {}
+                        for f in (mem, root, disabled, is_public):
+                            filts.update(f)
+                        assert_multi_filter_flavor_get(filts)
+
+    def test_flavor_get_all_limit_sort(self):
+        def assert_sorted_by_key_dir(sort_key, asc=True):
+            sort_dir = 'asc' if asc else 'desc'
+            results = db.flavor_get_all(self.ctxt, sort_key='name',
+                                        sort_dir=sort_dir)
+            # Manually sort the results as we would expect them
+            expected_results = sorted(results,
+                                      key=lambda item: item['name'],
+                                      reverse=(not asc))
+            self.assertEqual(expected_results, results)
+
+        def assert_sorted_by_key_both_dir(sort_key):
+            assert_sorted_by_key_dir(sort_key, True)
+            assert_sorted_by_key_dir(sort_key, False)
+
+        for attr in ['memory_mb', 'root_gb', 'deleted_at', 'name', 'deleted',
+                     'created_at', 'ephemeral_gb', 'updated_at', 'disabled',
+                     'vcpus', 'swap', 'rxtx_factor', 'is_public', 'flavorid',
+                     'vcpu_weight', 'id']:
+            assert_sorted_by_key_both_dir(attr)
+
+    def test_flavor_get_all_limit(self):
+        flavors = [
+            {'root_gb': 1, 'memory_mb': 100, 'disabled': True,
+             'is_public': False, 'name': 'flavor1', 'flavorid': 'flavor1'},
+            {'root_gb': 100, 'memory_mb': 200, 'disabled': True,
+             'is_public': False, 'name': 'flavor2', 'flavorid': 'flavor2'},
+            {'root_gb': 100, 'memory_mb': 300, 'disabled': True,
+             'is_public': False, 'name': 'flavor3', 'flavorid': 'flavor3'},
+        ]
+        flavors = [self._create_flavor(it) for it in flavors]
+
+        limited_flavors = db.flavor_get_all(self.ctxt, limit=2)
+        self.assertEqual(2, len(limited_flavors))
+
+    def test_flavor_get_all_list_marker(self):
+        flavors = [
+            {'root_gb': 1, 'memory_mb': 100, 'disabled': True,
+             'is_public': False, 'name': 'flavor1', 'flavorid': 'flavor1'},
+            {'root_gb': 100, 'memory_mb': 200, 'disabled': True,
+             'is_public': False, 'name': 'flavor2', 'flavorid': 'flavor2'},
+            {'root_gb': 100, 'memory_mb': 300, 'disabled': True,
+             'is_public': False, 'name': 'flavor3', 'flavorid': 'flavor3'},
+        ]
+        flavors = [self._create_flavor(it) for it in flavors]
+
+        all_flavors = db.flavor_get_all(self.ctxt)
+
+        # Set the 3rd result as the marker
+        marker_flavorid = all_flavors[2]['flavorid']
+        marked_flavors = db.flavor_get_all(self.ctxt, marker=marker_flavorid)
+        # We expect everything /after/ the 3rd result
+        expected_results = all_flavors[3:]
+        self.assertEqual(expected_results, marked_flavors)
+
+    def test_flavor_get_all_marker_not_found(self):
+        self.assertRaises(exception.MarkerNotFound,
+                db.flavor_get_all, self.ctxt, marker='invalid')
+
+    def test_flavor_get(self):
+        flavors = [{'name': 'abc', 'flavorid': '123'},
+                   {'name': 'def', 'flavorid': '456'},
+                   {'name': 'ghi', 'flavorid': '789'}]
+        flavors = [self._create_flavor(t) for t in flavors]
+
+        for flavor in flavors:
+            flavor_by_id = db.flavor_get(self.ctxt, flavor['id'])
+            self._assertEqualObjects(flavor, flavor_by_id)
+
+    def test_flavor_get_non_public(self):
+        flavor = self._create_flavor({'name': 'abc', 'flavorid': '123',
+                                      'is_public': False})
+
+        # Admin can see it
+        flavor_by_id = db.flavor_get(self.ctxt, flavor['id'])
+        self._assertEqualObjects(flavor, flavor_by_id)
+
+        # Regular user can not
+        self.assertRaises(exception.FlavorNotFound, db.flavor_get,
+                self.user_ctxt, flavor['id'])
+
+        # Regular user can see it after being granted access
+        db.flavor_access_add(self.ctxt, flavor['flavorid'],
+                self.user_ctxt.project_id)
+        flavor_by_id = db.flavor_get(self.user_ctxt, flavor['id'])
+        self._assertEqualObjects(flavor, flavor_by_id)
+
+    def test_flavor_get_by_name(self):
+        flavors = [{'name': 'abc', 'flavorid': '123'},
+                   {'name': 'def', 'flavorid': '456'},
+                   {'name': 'ghi', 'flavorid': '789'}]
+        flavors = [self._create_flavor(t) for t in flavors]
+
+        for flavor in flavors:
+            flavor_by_name = db.flavor_get_by_name(self.ctxt, flavor['name'])
+            self._assertEqualObjects(flavor, flavor_by_name)
+
+    def test_flavor_get_by_name_not_found(self):
+        self._create_flavor({})
+        self.assertRaises(exception.FlavorNotFoundByName,
+                          db.flavor_get_by_name, self.ctxt, 'nonexists')
+
+    def test_flavor_get_by_name_non_public(self):
+        flavor = self._create_flavor({'name': 'abc', 'flavorid': '123',
+                                      'is_public': False})
+
+        # Admin can see it
+        flavor_by_name = db.flavor_get_by_name(self.ctxt, flavor['name'])
+        self._assertEqualObjects(flavor, flavor_by_name)
+
+        # Regular user can not
+        self.assertRaises(exception.FlavorNotFoundByName,
+                db.flavor_get_by_name, self.user_ctxt,
+                flavor['name'])
+
+        # Regular user can see it after being granted access
+        db.flavor_access_add(self.ctxt, flavor['flavorid'],
+                self.user_ctxt.project_id)
+        flavor_by_name = db.flavor_get_by_name(self.user_ctxt, flavor['name'])
+        self._assertEqualObjects(flavor, flavor_by_name)
+
+    def test_flavor_get_by_flavor_id(self):
+        flavors = [{'name': 'abc', 'flavorid': '123'},
+                   {'name': 'def', 'flavorid': '456'},
+                   {'name': 'ghi', 'flavorid': '789'}]
+        flavors = [self._create_flavor(t) for t in flavors]
+
+        for flavor in flavors:
+            params = (self.ctxt, flavor['flavorid'])
+            flavor_by_flavorid = db.flavor_get_by_flavor_id(*params)
+            self._assertEqualObjects(flavor, flavor_by_flavorid)
+
+    def test_flavor_get_by_flavor_not_found(self):
+        self._create_flavor({})
+        self.assertRaises(exception.FlavorNotFound,
+                          db.flavor_get_by_flavor_id,
+                          self.ctxt, 'nonexists')
+
+    def test_flavor_get_by_flavor_id_non_public(self):
+        flavor = self._create_flavor({'name': 'abc', 'flavorid': '123',
+                                      'is_public': False})
+
+        # Admin can see it
+        flavor_by_fid = db.flavor_get_by_flavor_id(self.ctxt,
+                                                   flavor['flavorid'])
+        self._assertEqualObjects(flavor, flavor_by_fid)
+
+        # Regular user can not
+        self.assertRaises(exception.FlavorNotFound,
+                db.flavor_get_by_flavor_id, self.user_ctxt,
+                flavor['flavorid'])
+
+        # Regular user can see it after being granted access
+        db.flavor_access_add(self.ctxt, flavor['flavorid'],
+                self.user_ctxt.project_id)
+        flavor_by_fid = db.flavor_get_by_flavor_id(self.user_ctxt,
+                                                   flavor['flavorid'])
+        self._assertEqualObjects(flavor, flavor_by_fid)
+
+    def test_flavor_get_by_flavor_id_deleted(self):
+        flavor = self._create_flavor({'name': 'abc', 'flavorid': '123'})
+
+        db.flavor_destroy(self.ctxt, 'abc')
+
+        flavor_by_fid = db.flavor_get_by_flavor_id(self.ctxt,
+                flavor['flavorid'], read_deleted='yes')
+        self.assertEqual(flavor['id'], flavor_by_fid['id'])
+
+    def test_flavor_get_by_flavor_id_deleted_and_recreat(self):
+        # NOTE(wingwj): Aims to test difference between mysql and postgresql
+        # for bug 1288636
+        param_dict = {'name': 'abc', 'flavorid': '123'}
+
+        self._create_flavor(param_dict)
+        db.flavor_destroy(self.ctxt, 'abc')
+
+        # Recreate the flavor with the same params
+        flavor = self._create_flavor(param_dict)
+
+        flavor_by_fid = db.flavor_get_by_flavor_id(self.ctxt,
+                flavor['flavorid'], read_deleted='yes')
+        self.assertEqual(flavor['id'], flavor_by_fid['id'])
+
+class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
+
+    _ignored_keys = ['id', 'deleted', 'deleted_at', 'created_at', 'updated_at']
+    # TODO(jaypipes): Remove once the compute node inventory migration has
+    # been completed and the scheduler uses the inventories and allocations
+    # tables directly.
+    _ignored_temp_resource_providers_keys = [
+        'inv_memory_mb',
+        'inv_memory_mb_reserved',
+        'inv_ram_allocation_ratio',
+        'inv_memory_mb_used',
+        'inv_vcpus',
+        'inv_cpu_allocation_ratio',
+        'inv_vcpus_used',
+        'inv_local_gb',
+        'inv_local_gb_reserved',
+        'inv_disk_allocation_ratio',
+        'inv_local_gb_used',
+    ]
+
+    def setUp(self):
+        super(ComputeNodeTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.service_dict = dict(host='host1', binary='nova-compute',
+                            topic=CONF.compute_topic, report_count=1,
+                            disabled=False)
+        self.service = db.service_create(self.ctxt, self.service_dict)
+        self.compute_node_dict = dict(vcpus=2, memory_mb=1024, local_gb=2048,
+                                 uuid=uuidsentinel.fake_compute_node,
+                                 vcpus_used=0, memory_mb_used=0,
+                                 local_gb_used=0, free_ram_mb=1024,
+                                 free_disk_gb=2048, hypervisor_type="xen",
+                                 hypervisor_version=1, cpu_info="",
+                                 running_vms=0, current_workload=0,
+                                 service_id=self.service['id'],
+                                 host=self.service['host'],
+                                 disk_available_least=100,
+                                 hypervisor_hostname='abracadabra104',
+                                 host_ip='127.0.0.1',
+                                 supported_instances='',
+                                 pci_stats='',
+                                 metrics='',
+                                 extra_resources='',
+                                 cpu_allocation_ratio=16.0,
+                                 ram_allocation_ratio=1.5,
+                                 disk_allocation_ratio=1.0,
+                                 stats='', numa_topology='')
+        # add some random stats
+        self.stats = dict(num_instances=3, num_proj_12345=2,
+                     num_proj_23456=2, num_vm_building=3)
+        self.compute_node_dict['stats'] = jsonutils.dumps(self.stats)
+        # self.flags(reserved_host_memory_mb=0)
+        # self.flags(reserved_host_disk_mb=0)
+        self.item = db.compute_node_create(self.ctxt, self.compute_node_dict)
+
+
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        super(ComputeNodeTestCase, self).tearDown()
+        classes = [models.ComputeNode]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
+    def test_compute_node_create(self):
+        self._assertEqualObjects(self.compute_node_dict, self.item,
+                                ignored_keys=self._ignored_keys + ['stats'])
+        new_stats = jsonutils.loads(self.item['stats'])
+        self.assertEqual(self.stats, new_stats)
+
+    def test_compute_node_get_all(self):
+        nodes = db.compute_node_get_all(self.ctxt)
+        self.assertEqual(1, len(nodes))
+        node = nodes[0]
+        self._assertEqualObjects(self.compute_node_dict, node,
+                    ignored_keys=self._ignored_keys +
+                                 self._ignored_temp_resource_providers_keys +
+                                 ['stats', 'service'])
+        new_stats = jsonutils.loads(node['stats'])
+        self.assertEqual(self.stats, new_stats)
+
+    # NOTE(disco/msimonin): skip new ressource provider for now.
+    # def test_compute_node_select_schema(self):
+    #     # We here test that compute nodes that have inventory and allocation
+    #     # entries under the new resource-providers schema return non-None
+    #     # values for the inv_* fields in the returned list of dicts from
+    #     # _compute_node_select().
+    #     nodes = sqlalchemy_api._compute_node_fetchall(self.ctxt)
+    #     self.assertEqual(1, len(nodes))
+    #     node = nodes[0]
+    #     self.assertIsNone(node['inv_memory_mb'])
+    #     self.assertIsNone(node['inv_memory_mb_used'])
+    #
+    #     RAM_MB = fields.ResourceClass.index(fields.ResourceClass.MEMORY_MB)
+    #     VCPU = fields.ResourceClass.index(fields.ResourceClass.VCPU)
+    #     DISK_GB = fields.ResourceClass.index(fields.ResourceClass.DISK_GB)
+    #
+    #     @sqlalchemy_api.main_context_manager.writer
+    #     def create_resource_provider(context):
+    #         rp = models.ResourceProvider()
+    #         rp.uuid = node['uuid']
+    #         rp.save(context.session)
+    #         return rp.id
+    #
+    #     @sqlalchemy_api.main_context_manager.writer
+    #     def create_inventory(context, provider_id, resource_class, total):
+    #         inv = models.Inventory()
+    #         inv.resource_provider_id = provider_id
+    #         inv.resource_class_id = resource_class
+    #         inv.total = total
+    #         inv.reserved = 0
+    #         inv.allocation_ratio = 1.0
+    #         inv.min_unit = 1
+    #         inv.max_unit = 1
+    #         inv.step_size = 1
+    #         inv.save(context.session)
+    #
+    #     @sqlalchemy_api.main_context_manager.writer
+    #     def create_allocation(context, provider_id, resource_class, used):
+    #         alloc = models.Allocation()
+    #         alloc.resource_provider_id = provider_id
+    #         alloc.resource_class_id = resource_class
+    #         alloc.consumer_id = 'xyz'
+    #         alloc.used = used
+    #         alloc.save(context.session)
+    #
+    #     # Now add an inventory record for memory and check there is a non-None
+    #     # value for the inv_memory_mb field. Don't yet add an allocation record
+    #     # for RAM_MB yet so ensure inv_memory_mb_used remains None.
+    #     rp_id = create_resource_provider(self.ctxt)
+    #     create_inventory(self.ctxt, rp_id, RAM_MB, 4096)
+    #     nodes = db.compute_node_get_all(self.ctxt)
+    #     self.assertEqual(1, len(nodes))
+    #     node = nodes[0]
+    #     self.assertEqual(4096, node['inv_memory_mb'])
+    #     self.assertIsNone(node['inv_memory_mb_used'])
+    #
+    #     # Now add an allocation record for an instance consuming some memory
+    #     # and check there is a non-None value for the inv_memory_mb_used field.
+    #     create_allocation(self.ctxt, rp_id, RAM_MB, 64)
+    #     nodes = db.compute_node_get_all(self.ctxt)
+    #     self.assertEqual(1, len(nodes))
+    #     node = nodes[0]
+    #     self.assertEqual(4096, node['inv_memory_mb'])
+    #     self.assertEqual(64, node['inv_memory_mb_used'])
+    #
+    #     # Because of the complex join conditions, it's best to also test the
+    #     # other two resource classes and ensure that the joins are correct.
+    #     self.assertIsNone(node['inv_vcpus'])
+    #     self.assertIsNone(node['inv_vcpus_used'])
+    #     self.assertIsNone(node['inv_local_gb'])
+    #     self.assertIsNone(node['inv_local_gb_used'])
+    #
+    #     create_inventory(self.ctxt, rp_id, VCPU, 16)
+    #     create_allocation(self.ctxt, rp_id, VCPU, 2)
+    #     nodes = db.compute_node_get_all(self.ctxt)
+    #     self.assertEqual(1, len(nodes))
+    #     node = nodes[0]
+    #     self.assertEqual(16, node['inv_vcpus'])
+    #     self.assertEqual(2, node['inv_vcpus_used'])
+    #     # Check to make sure the other resources stayed the same...
+    #     self.assertEqual(4096, node['inv_memory_mb'])
+    #     self.assertEqual(64, node['inv_memory_mb_used'])
+    #
+    #     create_inventory(self.ctxt, rp_id, DISK_GB, 100)
+    #     create_allocation(self.ctxt, rp_id, DISK_GB, 20)
+    #     nodes = db.compute_node_get_all(self.ctxt)
+    #     self.assertEqual(1, len(nodes))
+    #     node = nodes[0]
+    #     self.assertEqual(100, node['inv_local_gb'])
+    #     self.assertEqual(20, node['inv_local_gb_used'])
+    #     # Check to make sure the other resources stayed the same...
+    #     self.assertEqual(4096, node['inv_memory_mb'])
+    #     self.assertEqual(64, node['inv_memory_mb_used'])
+    #     self.assertEqual(16, node['inv_vcpus'])
+    #     self.assertEqual(2, node['inv_vcpus_used'])
+
+    def test_compute_node_get_all_deleted_compute_node(self):
+        # Create a service and compute node and ensure we can find its stats;
+        # delete the service and compute node when done and loop again
+        for x in range(2, 5):
+            # Create a service
+            service_data = self.service_dict.copy()
+            service_data['host'] = 'host-%s' % x
+            service = db.service_create(self.ctxt, service_data)
+
+            # Create a compute node
+            compute_node_data = self.compute_node_dict.copy()
+            compute_node_data['service_id'] = service['id']
+            compute_node_data['stats'] = jsonutils.dumps(self.stats.copy())
+            compute_node_data['hypervisor_hostname'] = 'hypervisor-%s' % x
+            node = db.compute_node_create(self.ctxt, compute_node_data)
+
+            # Ensure the "new" compute node is found
+            nodes = db.compute_node_get_all(self.ctxt)
+            self.assertEqual(2, len(nodes))
+            found = None
+            for n in nodes:
+                if n['id'] == node['id']:
+                    found = n
+                    break
+            self.assertIsNotNone(found)
+            # Now ensure the match has stats!
+            self.assertNotEqual(jsonutils.loads(found['stats']), {})
+
+            # Now delete the newly-created compute node to ensure the related
+            # compute node stats are wiped in a cascaded fashion
+            db.compute_node_delete(self.ctxt, node['id'])
+
+            # Clean up the service
+            db.service_destroy(self.ctxt, service['id'])
+
+    def test_compute_node_get_all_mult_compute_nodes_one_service_entry(self):
+        service_data = self.service_dict.copy()
+        service_data['host'] = 'host2'
+        service = db.service_create(self.ctxt, service_data)
+
+        existing_node = dict(self.item.items())
+        expected = [existing_node]
+
+        for name in ['bm_node1', 'bm_node2']:
+            compute_node_data = self.compute_node_dict.copy()
+            compute_node_data['service_id'] = service['id']
+            compute_node_data['stats'] = jsonutils.dumps(self.stats)
+            compute_node_data['hypervisor_hostname'] = name
+            node = db.compute_node_create(self.ctxt, compute_node_data)
+
+            node = dict(node)
+
+            expected.append(node)
+
+        result = sorted(db.compute_node_get_all(self.ctxt),
+                        key=lambda n: n['hypervisor_hostname'])
+
+        self._assertEqualListsOfObjects(expected, result,
+                    ignored_keys=self._ignored_temp_resource_providers_keys +
+                                 ['stats'])
+
+    def test_compute_node_get_all_by_host_with_distinct_hosts(self):
+        # Create another service with another node
+        service2 = self.service_dict.copy()
+        service2['host'] = 'host2'
+        db.service_create(self.ctxt, service2)
+        compute_node_another_host = self.compute_node_dict.copy()
+        compute_node_another_host['stats'] = jsonutils.dumps(self.stats)
+        compute_node_another_host['hypervisor_hostname'] = 'node_2'
+        compute_node_another_host['host'] = 'host2'
+
+        node = db.compute_node_create(self.ctxt, compute_node_another_host)
+
+        result = db.compute_node_get_all_by_host(self.ctxt, 'host1')
+        self._assertEqualListsOfObjects([self.item], result,
+                ignored_keys=self._ignored_temp_resource_providers_keys)
+        result = db.compute_node_get_all_by_host(self.ctxt, 'host2')
+        self._assertEqualListsOfObjects([node], result,
+                ignored_keys=self._ignored_temp_resource_providers_keys)
+
+    def test_compute_node_get_all_by_host_with_same_host(self):
+        # Create another node on top of the same service
+        compute_node_same_host = self.compute_node_dict.copy()
+        compute_node_same_host['stats'] = jsonutils.dumps(self.stats)
+        compute_node_same_host['hypervisor_hostname'] = 'node_3'
+
+        node = db.compute_node_create(self.ctxt, compute_node_same_host)
+
+        expected = [self.item, node]
+        result = sorted(db.compute_node_get_all_by_host(
+                        self.ctxt, 'host1'),
+                        key=lambda n: n['hypervisor_hostname'])
+
+        ignored = ['stats'] + self._ignored_temp_resource_providers_keys
+        self._assertEqualListsOfObjects(expected, result,
+                                        ignored_keys=ignored)
+
+    def test_compute_node_get_all_by_host_not_found(self):
+        self.assertRaises(exception.ComputeHostNotFound,
+                          db.compute_node_get_all_by_host, self.ctxt, 'wrong')
+
+    def test_compute_nodes_get_by_service_id_one_result(self):
+        expected = [self.item]
+        result = db.compute_nodes_get_by_service_id(
+            self.ctxt, self.service['id'])
+
+        ignored = ['stats'] + self._ignored_temp_resource_providers_keys
+        self._assertEqualListsOfObjects(expected, result,
+                                        ignored_keys=ignored)
+
+    def test_compute_nodes_get_by_service_id_multiple_results(self):
+        # Create another node on top of the same service
+        compute_node_same_host = self.compute_node_dict.copy()
+        compute_node_same_host['stats'] = jsonutils.dumps(self.stats)
+        compute_node_same_host['hypervisor_hostname'] = 'node_2'
+
+        node = db.compute_node_create(self.ctxt, compute_node_same_host)
+
+        expected = [self.item, node]
+        result = sorted(db.compute_nodes_get_by_service_id(
+                        self.ctxt, self.service['id']),
+                        key=lambda n: n['hypervisor_hostname'])
+
+        ignored = ['stats'] + self._ignored_temp_resource_providers_keys
+        self._assertEqualListsOfObjects(expected, result,
+                                        ignored_keys=ignored)
+
+    def test_compute_nodes_get_by_service_id_not_found(self):
+        self.assertRaises(exception.ServiceNotFound,
+                          db.compute_nodes_get_by_service_id, self.ctxt,
+                          'fake')
+
+    def test_compute_node_get_by_host_and_nodename(self):
+        # Create another node on top of the same service
+        compute_node_same_host = self.compute_node_dict.copy()
+        compute_node_same_host['stats'] = jsonutils.dumps(self.stats)
+        compute_node_same_host['hypervisor_hostname'] = 'node_2'
+
+        node = db.compute_node_create(self.ctxt, compute_node_same_host)
+
+        expected = node
+        result = db.compute_node_get_by_host_and_nodename(
+            self.ctxt, 'host1', 'node_2')
+
+        self._assertEqualObjects(expected, result,
+                    ignored_keys=self._ignored_keys +
+                                 self._ignored_temp_resource_providers_keys +
+                                 ['stats', 'service'])
+
+    def test_compute_node_get_by_host_and_nodename_not_found(self):
+        self.assertRaises(exception.ComputeHostNotFound,
+                          db.compute_node_get_by_host_and_nodename,
+                          self.ctxt, 'host1', 'wrong')
+
+    def test_compute_node_get(self):
+        compute_node_id = self.item['id']
+        node = db.compute_node_get(self.ctxt, compute_node_id)
+        self._assertEqualObjects(self.compute_node_dict, node,
+                ignored_keys=self._ignored_keys +
+                             ['stats', 'service'] +
+                             self._ignored_temp_resource_providers_keys)
+        new_stats = jsonutils.loads(node['stats'])
+        self.assertEqual(self.stats, new_stats)
+
+    def test_compute_node_update(self):
+        compute_node_id = self.item['id']
+        stats = jsonutils.loads(self.item['stats'])
+        # change some values:
+        stats['num_instances'] = 8
+        stats['num_tribbles'] = 1
+        values = {
+            'vcpus': 4,
+            'stats': jsonutils.dumps(stats),
+        }
+        item_updated = db.compute_node_update(self.ctxt, compute_node_id,
+                                              values)
+        self.assertEqual(4, item_updated['vcpus'])
+        new_stats = jsonutils.loads(item_updated['stats'])
+        self.assertEqual(stats, new_stats)
+
+    def test_compute_node_delete(self):
+        compute_node_id = self.item['id']
+        db.compute_node_delete(self.ctxt, compute_node_id)
+        nodes = db.compute_node_get_all(self.ctxt)
+        self.assertEqual(len(nodes), 0)
+
+    def test_compute_node_search_by_hypervisor(self):
+        nodes_created = []
+        new_service = copy.copy(self.service_dict)
+        for i in range(3):
+            new_service['binary'] += str(i)
+            new_service['topic'] += str(i)
+            service = db.service_create(self.ctxt, new_service)
+            self.compute_node_dict['service_id'] = service['id']
+            self.compute_node_dict['hypervisor_hostname'] = 'testhost' + str(i)
+            self.compute_node_dict['stats'] = jsonutils.dumps(self.stats)
+            node = db.compute_node_create(self.ctxt, self.compute_node_dict)
+            nodes_created.append(node)
+        nodes = db.compute_node_search_by_hypervisor(self.ctxt, 'host')
+        self.assertEqual(3, len(nodes))
+        self._assertEqualListsOfObjects(nodes_created, nodes,
+                        ignored_keys=self._ignored_keys + ['stats', 'service'])
+
+    def test_compute_node_statistics_no_resource_providers(self):
+        service_dict = dict(host='hostA', binary='nova-compute',
+                            topic=CONF.compute_topic, report_count=1,
+                            disabled=False)
+        service = db.service_create(self.ctxt, service_dict)
+        # Define the various values for the new compute node
+        new_vcpus = 4
+        new_memory_mb = 4096
+        new_local_gb = 2048
+        new_vcpus_used = 1
+        new_memory_mb_used = 1024
+        new_local_gb_used = 100
+        new_free_ram_mb = 3072
+        new_free_disk_gb = 1948
+        new_running_vms = 1
+        new_current_workload = 0
+
+        # Calculate the expected values by adding the values for the new
+        # compute node to those for self.item
+        itm = self.item
+        exp_count = 2
+        exp_vcpus = new_vcpus + itm['vcpus']
+        exp_memory_mb = new_memory_mb + itm['memory_mb']
+        exp_local_gb = new_local_gb + itm['local_gb']
+        exp_vcpus_used = new_vcpus_used + itm['vcpus_used']
+        exp_memory_mb_used = new_memory_mb_used + itm['memory_mb_used']
+        exp_local_gb_used = new_local_gb_used + itm['local_gb_used']
+        exp_free_ram_mb = new_free_ram_mb + itm['free_ram_mb']
+        exp_free_disk_gb = new_free_disk_gb + itm['free_disk_gb']
+        exp_running_vms = new_running_vms + itm['running_vms']
+        exp_current_workload = new_current_workload + itm['current_workload']
+
+        # Create the new compute node
+        compute_node_dict = dict(vcpus=new_vcpus,
+                                 memory_mb=new_memory_mb,
+                                 local_gb=new_local_gb,
+                                 uuid=uuidsentinel.fake_compute_node,
+                                 vcpus_used=new_vcpus_used,
+                                 memory_mb_used=new_memory_mb_used,
+                                 local_gb_used=new_local_gb_used,
+                                 free_ram_mb=new_free_ram_mb,
+                                 free_disk_gb=new_free_disk_gb,
+                                 hypervisor_type="xen",
+                                 hypervisor_version=1,
+                                 cpu_info="",
+                                 running_vms=new_running_vms,
+                                 current_workload=new_current_workload,
+                                 service_id=service['id'],
+                                 host=service['host'],
+                                 disk_available_least=100,
+                                 hypervisor_hostname='abracadabra',
+                                 host_ip='127.0.0.2',
+                                 supported_instances='',
+                                 pci_stats='',
+                                 metrics='',
+                                 extra_resources='',
+                                 cpu_allocation_ratio=16.0,
+                                 ram_allocation_ratio=1.5,
+                                 disk_allocation_ratio=1.0,
+                                 stats='',
+                                 numa_topology='')
+        db.compute_node_create(self.ctxt, compute_node_dict)
+
+        # Get the stats, and make sure the stats agree with the expected
+        # amounts.
+        stats = db.compute_node_statistics(self.ctxt)
+        self.assertEqual(exp_count, stats['count'])
+        self.assertEqual(exp_vcpus, stats['vcpus'])
+        self.assertEqual(exp_memory_mb, stats['memory_mb'])
+        self.assertEqual(exp_local_gb, stats['local_gb'])
+        self.assertEqual(exp_vcpus_used, stats['vcpus_used'])
+        self.assertEqual(exp_memory_mb_used, stats['memory_mb_used'])
+        self.assertEqual(exp_local_gb_used, stats['local_gb_used'])
+        self.assertEqual(exp_free_ram_mb, stats['free_ram_mb'])
+        self.assertEqual(exp_free_disk_gb, stats['free_disk_gb'])
+        self.assertEqual(exp_running_vms, stats['running_vms'])
+        self.assertEqual(exp_current_workload, stats['current_workload'])
+
+    def test_compute_node_statistics_with_old_service_id(self):
+        # NOTE(sbauza): This test is only for checking backwards compatibility
+        # with old versions of compute_nodes not providing host column.
+        # This test could be removed once we are sure that all compute nodes
+        # are populating the host field thanks to the ResourceTracker
+
+        service2 = self.service_dict.copy()
+        service2['host'] = 'host2'
+        db_service2 = db.service_create(self.ctxt, service2)
+        compute_node_old_host = self.compute_node_dict.copy()
+        compute_node_old_host['stats'] = jsonutils.dumps(self.stats)
+        compute_node_old_host['hypervisor_hostname'] = 'node_2'
+        compute_node_old_host['service_id'] = db_service2['id']
+        compute_node_old_host.pop('host')
+
+        db.compute_node_create(self.ctxt, compute_node_old_host)
+        stats = db.compute_node_statistics(self.ctxt)
+        self.assertEqual(2, stats.pop('count'))
+
+    def test_compute_node_statistics_disabled_service(self):
+        serv = db.service_get_by_host_and_topic(
+            self.ctxt, 'host1', CONF.compute_topic)
+        db.service_update(self.ctxt, serv['id'], {'disabled': True})
+        stats = db.compute_node_statistics(self.ctxt)
+        self.assertEqual(stats.pop('count'), 0)
+
+    def test_compute_node_statistics_with_other_service(self):
+        other_service = self.service_dict.copy()
+        other_service['binary'] = 'nova-fake'
+        db.service_create(self.ctxt, other_service)
+
+        stats = db.compute_node_statistics(self.ctxt)
+        data = {'count': 1,
+                'vcpus_used': 0,
+                'local_gb_used': 0,
+                'memory_mb': 1024,
+                'current_workload': 0,
+                'vcpus': 2,
+                'running_vms': 0,
+                'free_disk_gb': 2048,
+                'disk_available_least': 100,
+                'local_gb': 2048,
+                'free_ram_mb': 1024,
+                'memory_mb_used': 0}
+        for key, value in six.iteritems(data):
+            self.assertEqual(value, stats.pop(key))
+
+    def test_compute_node_not_found(self):
+        self.assertRaises(exception.ComputeHostNotFound, db.compute_node_get,
+                          self.ctxt, 100500)
+
+    def test_compute_node_update_always_updates_updated_at(self):
+        item_updated = db.compute_node_update(self.ctxt,
+                self.item['id'], {})
+        self.assertNotEqual(self.item['updated_at'],
+                                 item_updated['updated_at'])
+
+    def test_compute_node_update_override_updated_at(self):
+        # Update the record once so updated_at is set.
+        first = db.compute_node_update(self.ctxt, self.item['id'],
+                                       {'free_ram_mb': '12'})
+        self.assertIsNotNone(first['updated_at'])
+
+        # Update a second time. Make sure that the updated_at value we send
+        # is overridden.
+        second = db.compute_node_update(self.ctxt, self.item['id'],
+                                        {'updated_at': first.updated_at,
+                                         'free_ram_mb': '13'})
+        self.assertNotEqual(first['updated_at'], second['updated_at'])
+
+    def test_service_destroy_with_compute_node(self):
+        db.service_destroy(self.ctxt, self.service['id'])
+        self.assertRaises(exception.ComputeHostNotFound,
+                          db.compute_node_get_model, self.ctxt,
+                          self.item['id'])
+
+    def test_service_destroy_with_old_compute_node(self):
+        # NOTE(sbauza): This test is only for checking backwards compatibility
+        # with old versions of compute_nodes not providing host column.
+        # This test could be removed once we are sure that all compute nodes
+        # are populating the host field thanks to the ResourceTracker
+        compute_node_old_host_dict = self.compute_node_dict.copy()
+        compute_node_old_host_dict.pop('host')
+        item_old = db.compute_node_create(self.ctxt,
+                                          compute_node_old_host_dict)
+
+        db.service_destroy(self.ctxt, self.service['id'])
+        self.assertRaises(exception.ComputeHostNotFound,
+                          db.compute_node_get_model, self.ctxt,
+                          item_old['id'])
+
+    @mock.patch("nova.db.sqlalchemy.api.compute_node_get_model")
+    def test_dbapi_compute_node_get_model(self, mock_get_model):
+        cid = self.item["id"]
+        db.api.compute_node_get_model(self.ctxt, cid)
+        mock_get_model.assert_called_once_with(self.ctxt, cid)
+
+    @mock.patch("nova.db.sqlalchemy.api.model_query")
+    def test_compute_node_get_model(self, mock_model_query):
+
+        class FakeFiltered(object):
+            def first(self):
+                return mock.sentinel.first
+
+        fake_filtered_cn = FakeFiltered()
+
+        class FakeModelQuery(object):
+            def filter_by(self, id):
+                return fake_filtered_cn
+
+        mock_model_query.return_value = FakeModelQuery()
+        result = sqlalchemy_api.compute_node_get_model(self.ctxt,
+                                                       self.item["id"])
+        self.assertEqual(result, mock.sentinel.first)
+        mock_model_query.assert_called_once_with(self.ctxt, models.ComputeNode)

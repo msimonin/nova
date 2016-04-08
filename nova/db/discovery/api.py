@@ -438,7 +438,12 @@ def model_query(context, model,
         rome_context.load_context(context)
         context = rome_context
 
-    query = RomeQuery(model, context.session, args)
+    # NOTE(msimonin) args may be tuple (see compute_node_statistics)
+    # we deconstruct them
+    if isinstance(args, tuple):
+        query = RomeQuery(model, context.session, *args)
+    else:
+        query = RomeQuery(model, context.session, args)
 
     query_kwargs = {}
     if 'no' == read_deleted:
@@ -839,36 +844,55 @@ def compute_node_delete(context, compute_id):
 def compute_node_statistics(context):
     """Compute statistics over all compute nodes."""
 
+    # NOTE(disco/msimonin): Use a simplified version of getting ressource for now
     # TODO(sbauza): Remove the service_id filter in a later release
     # once we are sure that all compute nodes report the host field
-    _filter = or_(models.Service.host == models.ComputeNode.host,
-                  models.Service.id == models.ComputeNode.service_id)
-
+    # _filter = or_(models.Service.host == models.ComputeNode.host,
+    #               models.Service.id == models.ComputeNode.service_id)
+    #
+    # result = model_query(context,
+    #                      models.ComputeNode, (
+    #                          func.count(models.ComputeNode.id),
+    #                          func.sum(models.ComputeNode.vcpus),
+    #                          func.sum(models.ComputeNode.memory_mb),
+    #                          func.sum(models.ComputeNode.local_gb),
+    #                          func.sum(models.ComputeNode.vcpus_used),
+    #                          func.sum(models.ComputeNode.memory_mb_used),
+    #                          func.sum(models.ComputeNode.local_gb_used),
+    #                          func.sum(models.ComputeNode.free_ram_mb),
+    #                          func.sum(models.ComputeNode.free_disk_gb),
+    #                          func.sum(models.ComputeNode.current_workload),
+    #                          func.sum(models.ComputeNode.running_vms),
+    #                          func.sum(models.ComputeNode.disk_available_least),
+    #                      ), read_deleted="no").\
+    #                      filter(models.Service.disabled == false()).\
+    #                      filter(models.Service.binary == "nova-compute").\
+    #                      filter(_filter).\
+    #                      first()
     result = model_query(context,
-                         models.ComputeNode, (
-                             func.count(models.ComputeNode.id),
-                             func.sum(models.ComputeNode.vcpus),
-                             func.sum(models.ComputeNode.memory_mb),
-                             func.sum(models.ComputeNode.local_gb),
-                             func.sum(models.ComputeNode.vcpus_used),
-                             func.sum(models.ComputeNode.memory_mb_used),
-                             func.sum(models.ComputeNode.local_gb_used),
-                             func.sum(models.ComputeNode.free_ram_mb),
-                             func.sum(models.ComputeNode.free_disk_gb),
-                             func.sum(models.ComputeNode.current_workload),
-                             func.sum(models.ComputeNode.running_vms),
-                             func.sum(models.ComputeNode.disk_available_least),
-                         ), read_deleted="no").\
-                         filter(models.Service.disabled == false()).\
-                         filter(models.Service.binary == "nova-compute").\
-                         filter(_filter).\
-                         first()
+                 models.ComputeNode,
+                 (func.count(models.ComputeNode.id),
+                 func.sum(models.ComputeNode.vcpus),
+                 func.sum(models.ComputeNode.memory_mb),
+                 func.sum(models.ComputeNode.local_gb),
+                 func.sum(models.ComputeNode.vcpus_used),
+                 func.sum(models.ComputeNode.memory_mb_used),
+                 func.sum(models.ComputeNode.local_gb_used),
+                 func.sum(models.ComputeNode.free_ram_mb),
+                 func.sum(models.ComputeNode.free_disk_gb),
+                 func.sum(models.ComputeNode.current_workload),
+                 func.sum(models.ComputeNode.running_vms),
+                 func.sum(models.ComputeNode.disk_available_least)),
+                 read_deleted="no"
+                 ).first()
 
     # Build a dict of the info--making no assumptions about result
     fields = ('count', 'vcpus', 'memory_mb', 'local_gb', 'vcpus_used',
               'memory_mb_used', 'local_gb_used', 'free_ram_mb', 'free_disk_gb',
               'current_workload', 'running_vms', 'disk_available_least')
-    return {field: int(result[idx] or 0)
+    # NOTE(disco/msimonin) currently in ROME the first element of the result
+    # is a row itself.
+    return {field: int(result[idx + 1] or 0)
             for idx, field in enumerate(fields)}
 
 
@@ -5059,10 +5083,10 @@ def flavor_get_all(context, inactive=False, filters=None,
         if not marker_row:
             raise exception.MarkerNotFound(marker)
 
-    query = sqlalchemyutils.paginate_query(query, models.InstanceTypes, limit,
-                                           [sort_key, 'id'],
-                                           marker=marker_row,
-                                           sort_dir=sort_dir)
+    # query = sqlalchemyutils.paginate_query(query, models.InstanceTypes, limit,
+    #                                       [sort_key, 'id'],
+    #                                       marker=marker_row,
+    #                                       sort_dir=sort_dir)
 
     inst_types = query.all()
 
