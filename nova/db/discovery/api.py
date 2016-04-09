@@ -5753,7 +5753,7 @@ def aggregate_create(context, values, metadata=None):
     if not aggregate:
         aggregate = models.Aggregate()
         aggregate.update(values)
-        aggregate.save(context.session)
+        aggregate.save(context.session, force=True)
         # We don't want these to be lazy loaded later.  We know there is
         # nothing here since we just created this aggregate.
         aggregate._hosts = []
@@ -5803,7 +5803,8 @@ def aggregate_get_by_host(context, host, key=None):
     if key:
         query = query.join("_metadata").filter(
             models.AggregateMetadata.key == key)
-    return query.all()
+    rows = map(lambda x: x[0], query.all())
+    return rows
 
 
 @wrapp_with_session
@@ -5816,7 +5817,9 @@ def aggregate_metadata_get_by_host(context, host, key=None):
 
     if key:
         query = query.filter(models.AggregateMetadata.key == key)
-    rows = query.all()
+
+    # rows = query.all()
+    rows = map(lambda x: x[0], query.all())
 
     metadata = collections.defaultdict(set)
     for agg in rows:

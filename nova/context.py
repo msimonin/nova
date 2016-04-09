@@ -103,8 +103,7 @@ class RequestContext(context.RequestContext):
             show_deleted=kwargs.pop('show_deleted', False),
             request_id=request_id,
             resource_uuid=kwargs.pop('resource_uuid', None),
-            overwrite=overwrite,
-            roles=roles)
+            overwrite=overwrite,)
         # oslo_context's RequestContext.to_dict() generates this field, we can
         # safely ignore this as we don't use it.
         kwargs.pop('user_identity', None)

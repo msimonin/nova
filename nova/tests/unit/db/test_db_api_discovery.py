@@ -79,7 +79,8 @@ CONF.import_opt('reserved_host_disk_mb', 'nova.compute.resource_tracker')
 
 get_engine = sqlalchemy_api.get_engine
 
-
+import logging
+logging.getLogger().setLevel(logging.DEBUG)
 
 import logging
 logging.getLogger().setLevel(logging.DEBUG)
