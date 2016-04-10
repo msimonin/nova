@@ -20,16 +20,15 @@ model.
 """
 import copy
 
-from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import importutils
 
 from nova.compute import claims
 from nova.compute import monitors
-from nova.compute import resources as ext_resources
 from nova.compute import task_states
 from nova.compute import vm_states
+import nova.conf
 from nova import exception
 from nova.i18n import _, _LE, _LI, _LW
 from nova import objects
@@ -41,69 +40,7 @@ from nova.scheduler import client as scheduler_client
 from nova import utils
 from nova.virt import hardware
 
-resource_tracker_opts = [
-    cfg.IntOpt('reserved_host_disk_mb', default=0,
-               help='Amount of disk in MB to reserve for the host'),
-    cfg.IntOpt('reserved_host_memory_mb', default=512,
-               help='Amount of memory in MB to reserve for the host'),
-    cfg.StrOpt('compute_stats_class',
-               default='nova.compute.stats.Stats',
-               help='DEPRECATED: Class that will manage stats for the '
-                   'local compute host',
-               deprecated_for_removal=True),
-    cfg.ListOpt('compute_resources',
-                default=[],
-                help='DEPRECATED: The names of the extra resources to track. '
-                     'The Extensible Resource Tracker is deprecated and will '
-                     'be removed in the 14.0.0 release. If you '
-                     'use this functionality and have custom resources that '
-                     'are managed by the Extensible Resource Tracker, please '
-                     'contact the Nova development team by posting to the '
-                     'openstack-dev mailing list. There is no future planned '
-                     'support for the tracking of custom resources.',
-                deprecated_for_removal=True),
-]
-
-allocation_ratio_opts = [
-    cfg.FloatOpt('cpu_allocation_ratio',
-        default=0.0,
-        help='Virtual CPU to physical CPU allocation ratio which affects '
-             'all CPU filters. This configuration specifies a global ratio '
-             'for CoreFilter. For AggregateCoreFilter, it will fall back to '
-             'this configuration value if no per-aggregate setting found. '
-             'NOTE: This can be set per-compute, or if set to 0.0, the value '
-             'set on the scheduler node(s) will be used '
-             'and defaulted to 16.0'),
-    cfg.FloatOpt('ram_allocation_ratio',
-        default=0.0,
-        help='Virtual ram to physical ram allocation ratio which affects '
-             'all ram filters. This configuration specifies a global ratio '
-             'for RamFilter. For AggregateRamFilter, it will fall back to '
-             'this configuration value if no per-aggregate setting found. '
-             'NOTE: This can be set per-compute, or if set to 0.0, the value '
-             'set on the scheduler node(s) will be used '
-             'and defaulted to 1.5'),
-    cfg.FloatOpt('disk_allocation_ratio',
-        default=0.0,
-        help='This is the virtual disk to physical disk allocation ratio used '
-             'by the disk_filter.py script to determine if a host has '
-             'sufficient disk space to fit a requested instance. A ratio '
-             'greater than 1.0 will result in over-subscription of the '
-             'available physical disk, which can be useful for more '
-             'efficiently packing instances created with images that do not '
-             'use the entire virtual disk,such as sparse or compressed '
-             'images. It can be set to a value between 0.0 and 1.0 in order '
-             'to preserve a percentage of the disk for uses other than '
-             'instances.'
-             'NOTE: This can be set per-compute, or if set to 0.0, the value '
-             'set on the scheduler node(s) will be used '
-             'and defaulted to 1.0'),
-]
-
-
-CONF = cfg.CONF
-CONF.register_opts(resource_tracker_opts)
-CONF.register_opts(allocation_ratio_opts)
+CONF = nova.conf.CONF
 
 LOG = logging.getLogger(__name__)
 COMPUTE_RESOURCE_SEMAPHORE = "compute_resources"
@@ -147,8 +84,6 @@ class ResourceTracker(object):
         self.tracked_migrations = {}
         monitor_handler = monitors.MonitorHandler(self)
         self.monitors = monitor_handler.monitors
-        self.ext_resources_handler = \
-            ext_resources.ResourceHandler(CONF.compute_resources)
         self.old_resources = objects.ComputeNode()
         self.scheduler_client = scheduler_client.SchedulerClient()
         self.ram_allocation_ratio = CONF.ram_allocation_ratio
@@ -452,6 +387,7 @@ class ResourceTracker(object):
         # purge old stats and init with anything passed in by the driver
         self.stats.clear()
         self.stats.digest_stats(resources.get('stats'))
+        self.compute_node.stats = copy.deepcopy(self.stats)
 
         # update the allocation ratios for the related ComputeNode object
         self.compute_node.ram_allocation_ratio = self.ram_allocation_ratio
@@ -548,7 +484,7 @@ class ResourceTracker(object):
         if 'pci_passthrough_devices' in resources:
             # TODO(jaypipes): Move this into _init_compute_node()
             if not self.pci_tracker:
-                n_id = self.compute_node['id'] if self.compute_node else None
+                n_id = self.compute_node.id if self.compute_node else None
                 self.pci_tracker = pci_manager.PciDevTracker(context,
                                                              node_id=n_id)
             dev_json = resources.pop('pci_passthrough_devices')
@@ -607,10 +543,6 @@ class ResourceTracker(object):
         except exception.NotFound:
             LOG.warning(_LW("No compute node record for %(host)s:%(node)s"),
                         {'host': self.host, 'node': self.nodename})
-
-    def _write_ext_resources(self, resources):
-        resources.stats = copy.deepcopy(self.stats)
-        self.ext_resources_handler.write_resources(resources)
 
     def _report_hypervisor_resource_view(self, resources):
         """Log the hypervisor's view of free resources.
@@ -699,7 +631,6 @@ class ResourceTracker(object):
 
     def _update(self, context):
         """Update partial stats locally and populate them to Scheduler."""
-        self._write_ext_resources(self.compute_node)
         if not self._resource_change():
             return
         # Persist the stats to the Scheduler
@@ -725,7 +656,6 @@ class ResourceTracker(object):
                                           self.compute_node.local_gb_used)
 
         self.compute_node.running_vms = self.stats.num_instances
-        self.ext_resources_handler.update_from_instance(usage, sign)
 
         # Calculate the numa usage
         free = sign == -1
@@ -882,6 +812,7 @@ class ResourceTracker(object):
             sign = -1
 
         self.stats.update_stats_for_instance(instance, is_removed_instance)
+        self.compute_node.stats = copy.deepcopy(self.stats)
 
         # if it's a new or deleted instance:
         if is_new_instance or is_removed_instance:
@@ -917,10 +848,6 @@ class ResourceTracker(object):
                                           self.compute_node.local_gb_used)
         self.compute_node.current_workload = 0
         self.compute_node.running_vms = 0
-
-        # Reset values for extended resources
-        self.ext_resources_handler.reset_resources(self.compute_node,
-                                                   self.driver)
 
         for instance in instances:
             if instance.vm_state not in vm_states.ALLOW_RESOURCE_REMOVAL:

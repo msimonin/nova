@@ -27,7 +27,6 @@ import six
 
 from nova.compute.monitors import base as monitor_base
 from nova.compute import resource_tracker
-from nova.compute import resources
 from nova.compute import task_states
 from nova.compute import vm_states
 from nova import context
@@ -64,7 +63,6 @@ FAKE_VIRT_VCPUS = 1
 FAKE_VIRT_STATS = {'virt_stat': 10}
 FAKE_VIRT_STATS_COERCED = {'virt_stat': '10'}
 FAKE_VIRT_STATS_JSON = jsonutils.dumps(FAKE_VIRT_STATS)
-RESOURCE_NAMES = ['vcpu']
 CONF = cfg.CONF
 
 
@@ -451,8 +449,6 @@ class BaseTestCase(test.TestCase):
 
         tracker = resource_tracker.ResourceTracker(host, driver, node)
         tracker.compute_node = self._create_compute_node_obj(self.context)
-        tracker.ext_resources_handler = \
-            resources.ResourceHandler(RESOURCE_NAMES, True)
         return tracker
 
 
@@ -686,7 +682,7 @@ class BaseTrackerTestCase(BaseTestCase):
         if field not in tracker.compute_node:
             raise test.TestingException(
                 "'%(field)s' not in compute node." % {'field': field})
-        x = tracker.compute_node[field]
+        x = getattr(tracker.compute_node, field)
 
         if field == 'numa_topology':
             self.assertEqualNUMAHostTopology(
@@ -810,32 +806,6 @@ class TrackerPciStatsTestCase(BaseTrackerTestCase):
 
     def _driver(self):
         return FakeVirtDriver(pci_support=True)
-
-
-class TrackerExtraResourcesTestCase(BaseTrackerTestCase):
-
-    def test_set_empty_ext_resources(self):
-        resources = self._create_compute_node_obj(self.context)
-        del resources.stats
-        self.tracker._write_ext_resources(resources)
-        self.assertEqual({}, resources.stats)
-
-    def test_set_extra_resources(self):
-        def fake_write_resources(resources):
-            resources['stats']['resA'] = '123'
-            resources['stats']['resB'] = 12
-
-        self.stubs.Set(self.tracker.ext_resources_handler,
-                       'write_resources',
-                       fake_write_resources)
-
-        resources = self._create_compute_node_obj(self.context)
-        del resources.stats
-        self.tracker._write_ext_resources(resources)
-
-        expected = {"resA": "123", "resB": "12"}
-        self.assertEqual(sorted(expected),
-                         sorted(resources.stats))
 
 
 class InstanceClaimTestCase(BaseTrackerTestCase):
@@ -1041,9 +1011,9 @@ class InstanceClaimTestCase(BaseTrackerTestCase):
                  'migration_context'],
                 mock_instance_list.call_args_list[0][1]['expected_attrs'])
         self.assertEqual(FAKE_VIRT_MEMORY_MB + FAKE_VIRT_MEMORY_OVERHEAD,
-                         self.tracker.compute_node['memory_mb_used'])
+                         self.tracker.compute_node.memory_mb_used)
         self.assertEqual(ROOT_GB + EPHEMERAL_GB,
-                         self.tracker.compute_node['local_gb_used'])
+                         self.tracker.compute_node.local_gb_used)
         mock_migration_list.assert_called_once_with(self.context,
                                                     "fakehost",
                                                     "fakenode")
@@ -1294,7 +1264,7 @@ class TrackerPeriodicTestCase(BaseTrackerTestCase):
         @mock.patch.object(self.tracker, '_verify_resources')
         @mock.patch.object(self.tracker, '_report_hypervisor_resource_view')
         def _test(mock_rhrv, mock_vr, mock_uar, mock_driver):
-            resources = {'there is someone in my head': 'but it\'s not me'}
+            resources = self._create_compute_node()
             mock_driver.get_available_resource.return_value = resources
             self.tracker.update_available_resource(self.context)
             mock_uar.assert_called_once_with(self.context, resources)

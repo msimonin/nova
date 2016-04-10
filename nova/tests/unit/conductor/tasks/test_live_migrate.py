@@ -219,12 +219,13 @@ class LiveMigrationTaskTestCase(test.NoDBTestCase):
 
         self.task._check_host_is_up(self.destination)
         self.task._check_destination_has_enough_memory()
-        self.task._get_compute_info(self.instance_host).AndReturn({
-            "hypervisor_type": "b"
-        })
-        self.task._get_compute_info(self.destination).AndReturn({
-            "hypervisor_type": "a"
-        })
+
+        self.task._get_compute_info(self.instance_host).AndReturn(
+            objects.ComputeNode(hypervisor_type='b')
+        )
+        self.task._get_compute_info(self.destination).AndReturn(
+            objects.ComputeNode(hypervisor_type='a')
+        )
 
         self.mox.ReplayAll()
         self.assertRaises(exception.InvalidHypervisorType,
@@ -238,14 +239,14 @@ class LiveMigrationTaskTestCase(test.NoDBTestCase):
 
         self.task._check_host_is_up(self.destination)
         self.task._check_destination_has_enough_memory()
-        self.task._get_compute_info(self.instance_host).AndReturn({
-            "hypervisor_type": "a",
-            "hypervisor_version": 7
-        })
-        self.task._get_compute_info(self.destination).AndReturn({
-            "hypervisor_type": "a",
-            "hypervisor_version": 6
-        })
+        host1 = {'hypervisor_type': 'a', 'hypervisor_version': 7}
+        self.task._get_compute_info(self.instance_host).AndReturn(
+            objects.ComputeNode(**host1)
+        )
+        host2 = {'hypervisor_type': 'a', 'hypervisor_version': 6}
+        self.task._get_compute_info(self.destination).AndReturn(
+            objects.ComputeNode(**host2)
+        )
 
         self.mox.ReplayAll()
         self.assertRaises(exception.DestinationHypervisorTooOld,
@@ -254,6 +255,8 @@ class LiveMigrationTaskTestCase(test.NoDBTestCase):
     def test_find_destination_works(self):
         self.mox.StubOutWithMock(utils, 'get_image_from_system_metadata')
         self.mox.StubOutWithMock(scheduler_utils, 'setup_instance_group')
+        self.mox.StubOutWithMock(objects.RequestSpec,
+                                 'reset_forced_destinations')
         self.mox.StubOutWithMock(self.task.scheduler_client,
                                  'select_destinations')
         self.mox.StubOutWithMock(self.task,
@@ -265,6 +268,7 @@ class LiveMigrationTaskTestCase(test.NoDBTestCase):
         fake_props = {'instance_properties': {'uuid': self.instance_uuid}}
         scheduler_utils.setup_instance_group(
             self.context, fake_props, {'ignore_hosts': [self.instance_host]})
+        self.fake_spec.reset_forced_destinations()
         self.task.scheduler_client.select_destinations(
             self.context, self.fake_spec).AndReturn(
                         [{'host': 'host1'}])

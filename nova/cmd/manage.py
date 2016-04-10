@@ -71,6 +71,7 @@ import six
 
 from nova.api.ec2 import ec2utils
 from nova import availability_zones
+import nova.conf
 from nova import config
 from nova import context
 from nova import db
@@ -78,24 +79,15 @@ from nova.db import migration
 from nova import exception
 from nova.i18n import _
 from nova import objects
-from nova.openstack.common import cliutils
+from nova.objects import flavor as flavor_obj
 from nova import quota
 from nova import rpc
 from nova import servicegroup
 from nova import utils
 from nova import version
 
-CONF = cfg.CONF
-CONF.import_opt('network_manager', 'nova.service')
-CONF.import_opt('service_down_time', 'nova.service')
-CONF.import_opt('flat_network_bridge', 'nova.network.manager')
-CONF.import_opt('num_networks', 'nova.network.manager')
-CONF.import_opt('multi_host', 'nova.network.manager')
-CONF.import_opt('network_size', 'nova.network.manager')
-CONF.import_opt('vlan_start', 'nova.network.manager')
-CONF.import_opt('vpn_start', 'nova.network.manager')
+CONF = nova.conf.CONF
 CONF.import_opt('default_floating_pool', 'nova.network.floating_ips')
-CONF.import_opt('public_interface', 'nova.network.linux_net')
 CONF.import_opt('connection', 'oslo_db.options', group='database')
 
 QUOTAS = quota.QUOTAS
@@ -929,6 +921,8 @@ class DbCommands(object):
         db.pcidevice_online_data_migration,
         db.computenode_uuids_online_data_migration,
         db.aggregate_uuids_online_data_migration,
+        flavor_obj.migrate_flavors,
+        flavor_obj.migrate_flavor_reset_autoincrement,
     )
 
     def __init__(self):
@@ -963,8 +957,8 @@ class DbCommands(object):
         table_to_rows_archived = db.archive_deleted_rows(max_rows)
         if verbose:
             if table_to_rows_archived:
-                cliutils.print_dict(table_to_rows_archived, _('Table'),
-                                    dict_value=_('Number of Rows Archived'))
+                utils.print_dict(table_to_rows_archived, _('Table'),
+                                 dict_value=_('Number of Rows Archived'))
             else:
                 print(_('Nothing was archived.'))
 
@@ -1024,11 +1018,14 @@ class DbCommands(object):
     def online_data_migrations(self, max_count=None):
         ctxt = context.get_admin_context()
         if max_count is not None:
-            max_count = int(max_count)
+            try:
+                max_count = int(max_count)
+            except ValueError:
+                max_count = -1
             unlimited = False
-            if max_count < 0:
+            if max_count < 1:
                 print(_('Must supply a positive value for max_number'))
-                return(1)
+                return 127
         else:
             unlimited = True
             max_count = 50
@@ -1039,6 +1036,8 @@ class DbCommands(object):
             ran = self._run_migration(ctxt, max_count)
             if not unlimited:
                 break
+
+        return ran and 1 or 0
 
 
 class ApiDbCommands(object):
@@ -1559,15 +1558,14 @@ def main():
 
     # call the action with the remaining arguments
     # check arguments
-    try:
-        cliutils.validate_args(fn, *fn_args, **fn_kwargs)
-    except cliutils.MissingArgs as e:
+    missing = utils.validate_args(fn, *fn_args, **fn_kwargs)
+    if missing:
         # NOTE(mikal): this isn't the most helpful error message ever. It is
         # long, and tells you a lot of things you probably don't want to know
         # if you just got a single arg wrong.
         print(fn.__doc__)
         CONF.print_help()
-        print(e)
+        print(_("Missing arguments: %s") % ", ".join(missing))
         return(1)
     try:
         ret = fn(*fn_args, **fn_kwargs)

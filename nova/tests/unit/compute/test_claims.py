@@ -42,7 +42,6 @@ class FakeResourceHandler(object):
 class DummyTracker(object):
     icalled = False
     rcalled = False
-    ext_resources_handler = FakeResourceHandler()
 
     def __init__(self):
         self.new_pci_tracker()
@@ -143,7 +142,7 @@ class ClaimTestCase(test.NoDBTestCase):
         }
         if values:
             resources.update(values)
-        return resources
+        return objects.ComputeNode(**resources)
 
     def test_memory_unlimited(self):
         self._claim(memory_mb=99999999)
@@ -226,11 +225,6 @@ class ClaimTestCase(test.NoDBTestCase):
         # if Claim._test_pci() did not return None.
         self._claim()
         self.assertFalse(mock_supports.called)
-
-    def test_ext_resources(self):
-        self._claim()
-        self.assertTrue(self.tracker.ext_resources_handler.test_called)
-        self.assertFalse(self.tracker.ext_resources_handler.usage_is_itype)
 
     def test_numa_topology_no_limit(self):
         huge_instance = objects.InstanceNUMATopology(
@@ -394,11 +388,6 @@ class MoveClaimTestCase(ClaimTestCase):
                                      {}, self.tracker, self.resources,
                                      overhead=overhead, limits=limits)
         return get_claim()
-
-    def test_ext_resources(self):
-        self._claim()
-        self.assertTrue(self.tracker.ext_resources_handler.test_called)
-        self.assertTrue(self.tracker.ext_resources_handler.usage_is_itype)
 
     def test_abort(self):
         claim = self._abort()

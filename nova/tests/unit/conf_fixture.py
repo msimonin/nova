@@ -26,9 +26,6 @@ from nova.tests.unit import utils
 CONF = nova.conf.CONF
 CONF.import_opt('use_ipv6', 'nova.netconf')
 CONF.import_opt('host', 'nova.netconf')
-CONF.import_opt('fake_network', 'nova.network.linux_net')
-CONF.import_opt('network_size', 'nova.network.manager')
-CONF.import_opt('num_networks', 'nova.network.manager')
 CONF.import_opt('floating_ip_dns_manager', 'nova.network.floating_ips')
 CONF.import_opt('instance_dns_manager', 'nova.network.floating_ips')
 
@@ -38,7 +35,8 @@ class ConfFixture(config_fixture.Config):
     def setUp(self):
         super(ConfFixture, self).setUp()
         self.conf.set_default('api_paste_config',
-                              paths.state_path_def('etc/nova/api-paste.ini'))
+                              paths.state_path_def('etc/nova/api-paste.ini'),
+                              group='wsgi')
         self.conf.set_default('host', 'fake-mini')
         self.conf.set_default('compute_driver',
                               'nova.virt.fake.SmallFakeDriver')
@@ -61,7 +59,6 @@ class ConfFixture(config_fixture.Config):
         self.conf.set_default('sqlite_synchronous', False,
                 group='api_database')
         self.conf.set_default('fatal_exception_format_errors', True)
-        self.conf.set_default('enabled', True, 'osapi_v21')
         # TODO(sdague): this makes our project_id match 'fake' as well.
         # We should fix the tests to use real
         # UUIDs then drop this work around.

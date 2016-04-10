@@ -21,7 +21,6 @@ from eventlet import event as eventlet_event
 import mock
 from mox3 import mox
 import netaddr
-from oslo_config import cfg
 import oslo_messaging as messaging
 from oslo_serialization import jsonutils
 from oslo_utils import importutils
@@ -37,6 +36,7 @@ from nova.compute import task_states
 from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova.conductor import api as conductor_api
+import nova.conf
 from nova import context
 from nova import db
 from nova import exception
@@ -64,8 +64,7 @@ from nova.virt import fake as fake_driver
 from nova.virt import hardware
 
 
-CONF = cfg.CONF
-CONF.import_opt('compute_manager', 'nova.service')
+CONF = nova.conf.CONF
 
 
 class ComputeManagerUnitTestCase(test.NoDBTestCase):
@@ -158,57 +157,84 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                           '_shutdown_instance', 'delete'],
                          methods_called)
 
-    @mock.patch.object(manager.ComputeManager, '_get_resource_tracker')
-    @mock.patch.object(fake_driver.FakeDriver, 'get_available_nodes')
-    @mock.patch.object(manager.ComputeManager, '_get_compute_nodes_in_db')
-    def test_update_available_resource(self, get_db_nodes, get_avail_nodes,
-                                       get_rt):
-        info = {'cn_id': 1}
-
-        def _make_compute_node(hyp_hostname):
+    def _make_compute_node(self, hyp_hostname, cn_id):
             cn = mock.Mock(spec_set=['hypervisor_hostname', 'id',
                                      'destroy'])
-            cn.id = info['cn_id']
-            info['cn_id'] += 1
+            cn.id = cn_id
             cn.hypervisor_hostname = hyp_hostname
             return cn
 
-        def _make_rt(node):
+    def _make_rt(self, node):
             n = mock.Mock(spec_set=['update_available_resource',
                                     'nodename'])
             n.nodename = node
             return n
 
-        ctxt = mock.Mock()
-        db_nodes = [_make_compute_node('node1'),
-                    _make_compute_node('node2'),
-                    _make_compute_node('node3'),
-                    _make_compute_node('node4')]
+    @mock.patch.object(manager.ComputeManager, '_get_resource_tracker')
+    @mock.patch.object(fake_driver.FakeDriver, 'get_available_nodes')
+    @mock.patch.object(manager.ComputeManager, '_get_compute_nodes_in_db')
+    def test_update_available_resource_for_node(
+        self, get_db_nodes, get_avail_nodes, get_rt):
+        db_nodes = []
+
+        db_nodes = [self._make_compute_node('node%s' % i, i)
+                    for i in range(1, 5)]
         avail_nodes = set(['node2', 'node3', 'node4', 'node5'])
         avail_nodes_l = list(avail_nodes)
-        rts = [_make_rt(node) for node in avail_nodes_l]
+        rts = [self._make_rt(node) for node in avail_nodes_l]
         # Make the 2nd and 3rd ones raise
         exc = exception.ComputeHostNotFound(host='fake')
         rts[1].update_available_resource.side_effect = exc
         exc = test.TestingException()
         rts[2].update_available_resource.side_effect = exc
-        rts_iter = iter(rts)
+        get_db_nodes.return_value = db_nodes
+        get_avail_nodes.return_value = avail_nodes
+        get_rt.side_effect = rts
 
-        def _get_rt_side_effect(*args, **kwargs):
-            return next(rts_iter)
+        self.compute.update_available_resource_for_node(self.context,
+                                                        avail_nodes_l[0])
+        self.assertEqual(self.compute._resource_tracker_dict[avail_nodes_l[0]],
+                         rts[0])
+
+        # Update ComputeHostNotFound
+        self.compute.update_available_resource_for_node(self.context,
+                                                        avail_nodes_l[1])
+        self.assertNotIn(self.compute._resource_tracker_dict, avail_nodes_l[1])
+
+        # Update TestException
+        self.compute.update_available_resource_for_node(self.context,
+                                                        avail_nodes_l[2])
+        self.assertEqual(self.compute._resource_tracker_dict[
+            avail_nodes_l[2]], rts[2])
+
+    @mock.patch.object(manager.ComputeManager, '_get_resource_tracker')
+    @mock.patch.object(fake_driver.FakeDriver, 'get_available_nodes')
+    @mock.patch.object(manager.ComputeManager, '_get_compute_nodes_in_db')
+    def test_update_available_resource(self, get_db_nodes, get_avail_nodes,
+                                       get_rt):
+        db_nodes = [self._make_compute_node('node%s' % i, i)
+                    for i in range(1, 5)]
+        avail_nodes = set(['node2', 'node3', 'node4', 'node5'])
+        avail_nodes_l = list(avail_nodes)
+        rts = [self._make_rt(node) for node in avail_nodes_l]
+        # Make the 2nd and 3rd ones raise
+        exc = exception.ComputeHostNotFound(host='fake')
+        rts[1].update_available_resource.side_effect = exc
+        exc = test.TestingException()
+        rts[2].update_available_resource.side_effect = exc
 
         expected_rt_dict = {avail_nodes_l[0]: rts[0],
                             avail_nodes_l[2]: rts[2],
                             avail_nodes_l[3]: rts[3]}
         get_db_nodes.return_value = db_nodes
         get_avail_nodes.return_value = avail_nodes
-        get_rt.side_effect = _get_rt_side_effect
-        self.compute.update_available_resource(ctxt)
-        get_db_nodes.assert_called_once_with(ctxt, use_slave=True)
+        get_rt.side_effect = rts
+        self.compute.update_available_resource(self.context)
+        get_db_nodes.assert_called_once_with(self.context, use_slave=True)
         self.assertEqual(sorted([mock.call(node) for node in avail_nodes]),
                          sorted(get_rt.call_args_list))
         for rt in rts:
-            rt.update_available_resource.assert_called_once_with(ctxt)
+            rt.update_available_resource.assert_called_once_with(self.context)
         self.assertEqual(expected_rt_dict,
                          self.compute._resource_tracker_dict)
         # First node in set should have been removed from DB
@@ -1111,6 +1137,10 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         exc = exception.DiskNotFound(location="not\\here")
         self._test_shutdown_instance_exception(exc)
 
+    def test_shutdown_instance_other_exception(self):
+        exc = Exception('some other exception')
+        self._test_shutdown_instance_exception(exc)
+
     def _test_init_instance_retries_reboot(self, instance, reboot_type,
                                            return_power_state):
         instance.host = self.compute.host
@@ -1764,6 +1794,54 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                                 self.context, **{'uuid': uuids.instance}))
         self.assertEqual(volumes[old_volume_id]['status'], 'in-use')
         self.assertEqual(volumes[new_volume_id]['status'], 'available')
+
+    @mock.patch('nova.db.block_device_mapping_get_by_instance_and_volume_id')
+    @mock.patch('nova.db.block_device_mapping_update')
+    @mock.patch('nova.volume.cinder.API.get')
+    @mock.patch('nova.virt.libvirt.LibvirtDriver.get_volume_connector')
+    @mock.patch('nova.compute.manager.ComputeManager._swap_volume')
+    def test_swap_volume_delete_on_termination_flag(self, swap_volume_mock,
+                                                    volume_connector_mock,
+                                                    get_volume_mock,
+                                                    update_bdm_mock,
+                                                    get_bdm_mock):
+        # This test ensures that delete_on_termination flag arguments
+        # are reserved
+        volumes = {}
+        old_volume_id = uuidutils.generate_uuid()
+        volumes[old_volume_id] = {'id': old_volume_id,
+                                  'display_name': 'old_volume',
+                                  'status': 'detaching',
+                                  'size': 2}
+        new_volume_id = uuidutils.generate_uuid()
+        volumes[new_volume_id] = {'id': new_volume_id,
+                                  'display_name': 'new_volume',
+                                  'status': 'available',
+                                  'size': 2}
+        fake_bdm = fake_block_device.FakeDbBlockDeviceDict(
+                   {'device_name': '/dev/vdb', 'source_type': 'volume',
+                    'destination_type': 'volume',
+                    'instance_uuid': uuids.instance,
+                    'delete_on_termination': True,
+                    'connection_info': '{"foo": "bar"}'})
+        comp_ret = {'save_volume_id': old_volume_id}
+        new_info = {"foo": "bar"}
+        swap_volume_mock.return_value = (comp_ret, new_info)
+        volume_connector_mock.return_value = {}
+        update_bdm_mock.return_value = fake_bdm
+        get_bdm_mock.return_value = fake_bdm
+        get_volume_mock.return_value = volumes[old_volume_id]
+        self.compute.swap_volume(self.context, old_volume_id, new_volume_id,
+                fake_instance.fake_instance_obj(self.context,
+                                                **{'uuid': uuids.instance}))
+        update_values = {'no_device': False,
+                         'connection_info': u'{"foo": "bar"}',
+                         'volume_id': old_volume_id,
+                         'source_type': u'volume',
+                         'snapshot_id': None,
+                         'destination_type': u'volume'}
+        update_bdm_mock.assert_called_once_with(mock.ANY, mock.ANY,
+                                                update_values, legacy=False)
 
     @mock.patch.object(compute_utils, 'EventReporter')
     def test_check_can_live_migrate_source(self, event_mock):
@@ -4800,6 +4878,7 @@ class ComputeManagerInstanceUsageAuditTestCase(test.TestCase):
     def setUp(self):
         super(ComputeManagerInstanceUsageAuditTestCase, self).setUp()
         self.flags(use_local=True, group='conductor')
+        self.flags(group='glance', api_servers=['http://localhost:9292'])
         self.flags(instance_usage_audit=True)
 
     @mock.patch('nova.objects.TaskLog')

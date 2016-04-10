@@ -150,7 +150,6 @@ class Claim(NopClaim):
                    self._test_vcpus(resources, vcpus_limit),
                    self._test_numa_topology(resources, numa_topology_limit),
                    self._test_pci()]
-        reasons = reasons + self._test_ext_resources(limits)
         reasons = [r for r in reasons if r is not None]
         if len(reasons) > 0:
             raise exception.ComputeResourcesUnavailable(reason=
@@ -161,8 +160,8 @@ class Claim(NopClaim):
     def _test_memory(self, resources, limit):
         type_ = _("memory")
         unit = "MB"
-        total = resources['memory_mb']
-        used = resources['memory_mb_used']
+        total = resources.memory_mb
+        used = resources.memory_mb_used
         requested = self.memory_mb
 
         return self._test(type_, unit, total, used, requested, limit)
@@ -170,8 +169,8 @@ class Claim(NopClaim):
     def _test_disk(self, resources, limit):
         type_ = _("disk")
         unit = "GB"
-        total = resources['local_gb']
-        used = resources['local_gb_used']
+        total = resources.local_gb
+        used = resources.local_gb_used
         requested = self.disk_gb
 
         return self._test(type_, unit, total, used, requested, limit)
@@ -179,8 +178,8 @@ class Claim(NopClaim):
     def _test_vcpus(self, resources, limit):
         type_ = _("vcpu")
         unit = "VCPU"
-        total = resources['vcpus']
-        used = resources['vcpus_used']
+        total = resources.vcpus
+        used = resources.vcpus_used
         requested = self.vcpus
 
         return self._test(type_, unit, total, used, requested, limit)
@@ -194,12 +193,9 @@ class Claim(NopClaim):
             if not stats.support_requests(pci_requests.requests):
                 return _('Claim pci failed.')
 
-    def _test_ext_resources(self, limits):
-        return self.tracker.ext_resources_handler.test_resources(
-            self.instance, limits)
-
     def _test_numa_topology(self, resources, limit):
-        host_topology = resources.get('numa_topology')
+        host_topology = (resources.numa_topology
+                         if 'numa_topology' in resources else None)
         requested_topology = self.numa_topology
         if host_topology:
             host_topology = objects.NUMATopology.obj_from_db_obj(
@@ -302,10 +298,6 @@ class MoveClaim(Claim):
                 pci_requests.requests)
             if not claim:
                 return _('Claim pci failed.')
-
-    def _test_ext_resources(self, limits):
-        return self.tracker.ext_resources_handler.test_resources(
-            self.instance_type, limits)
 
     def abort(self):
         """Compute operation requiring claimed resources has failed or

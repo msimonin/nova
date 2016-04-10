@@ -24,7 +24,6 @@ import fixtures
 import iso8601
 import mock
 from mox3 import mox
-from oslo_config import cfg
 from oslo_policy import policy as oslo_policy
 from oslo_serialization import jsonutils
 from oslo_utils import timeutils
@@ -50,6 +49,7 @@ from nova.compute import api as compute_api
 from nova.compute import flavors
 from nova.compute import task_states
 from nova.compute import vm_states
+import nova.conf
 from nova import context
 from nova import db
 from nova.db.sqlalchemy import models
@@ -67,8 +67,7 @@ from nova.tests.unit.image import fake
 from nova.tests.unit import matchers
 from nova import utils as nova_utils
 
-CONF = cfg.CONF
-CONF.import_opt('password_length', 'nova.utils')
+CONF = nova.conf.CONF
 
 FAKE_UUID = fakes.FAKE_UUID
 
@@ -207,6 +206,7 @@ class ControllerTest(test.TestCase):
                        lambda api, *a, **k: return_server(*a, **k))
         self.stub_out('nova.db.instance_update_and_get_original',
                       instance_update_and_get_original)
+        self.flags(group='glance', api_servers=['http://localhost:9292'])
 
         ext_info = extension_info.LoadedExtensionInfo()
         self.controller = servers.ServersController(extension_info=ext_info)
@@ -218,10 +218,6 @@ class ControllerTest(test.TestCase):
 
 class ServersControllerTest(ControllerTest):
     wsgi_api_version = os_wsgi.DEFAULT_API_VERSION
-
-    def setUp(self):
-        super(ServersControllerTest, self).setUp()
-        CONF.set_override('host', 'localhost', group='glance')
 
     def req(self, url, use_admin_context=False):
         return fakes.HTTPRequest.blank(url,
@@ -1464,6 +1460,65 @@ class ServersControllerTestV219(ServersControllerTest):
 
     def test_list_server_detail_with_descriptions(self):
         self._test_list_server_detail_with_descriptions('desc1', 'desc2')
+
+
+class ServersControllerTestV226(ControllerTest):
+    wsgi_api_version = '2.26'
+
+    @mock.patch.object(compute_api.API, 'get')
+    def test_get_server_with_tags_by_id(self, mock_get):
+        req = fakes.HTTPRequest.blank('/fake/servers/%s' % FAKE_UUID,
+                                      version=self.wsgi_api_version)
+        ctxt = req.environ['nova.context']
+
+        fake_server = fakes.stub_instance_obj(
+            ctxt, id=2, vm_state=vm_states.ACTIVE, progress=100)
+
+        tags = ['tag1', 'tag2']
+        tag_list = objects.TagList(objects=[
+            objects.Tag(resource_id=FAKE_UUID, tag=tag)
+            for tag in tags])
+
+        fake_server.tags = tag_list
+        mock_get.return_value = fake_server
+
+        res_dict = self.controller.show(req, FAKE_UUID)
+
+        self.assertIn('tags', res_dict['server'])
+        self.assertEqual(res_dict['server']['tags'], tags)
+
+    @mock.patch.object(compute_api.API, 'get_all')
+    def _test_get_servers_allows_tag_filters(self, filter_name, mock_get_all):
+        server_uuid = str(uuid.uuid4())
+        req = fakes.HTTPRequest.blank('/fake/servers?%s=t1,t2' % filter_name,
+                                      version=self.wsgi_api_version)
+        ctxt = req.environ['nova.context']
+
+        def fake_get_all(*a, **kw):
+            self.assertIsNotNone(kw['search_opts'])
+            self.assertIn(filter_name, kw['search_opts'])
+            self.assertEqual(kw['search_opts'][filter_name], ['t1', 't2'])
+            return objects.InstanceList(
+                objects=[fakes.stub_instance_obj(ctxt, uuid=server_uuid)])
+
+        mock_get_all.side_effect = fake_get_all
+
+        servers = self.controller.index(req)['servers']
+
+        self.assertEqual(len(servers), 1)
+        self.assertEqual(servers[0]['id'], server_uuid)
+
+    def test_get_servers_allows_tags_filter(self):
+        self._test_get_servers_allows_tag_filters('tags')
+
+    def test_get_servers_allows_tags_any_filter(self):
+        self._test_get_servers_allows_tag_filters('tags-any')
+
+    def test_get_servers_allows_not_tags_filter(self):
+        self._test_get_servers_allows_tag_filters('not-tags')
+
+    def test_get_servers_allows_not_tags_any_filter(self):
+        self._test_get_servers_allows_tag_filters('not-tags-any')
 
 
 class ServersControllerDeleteTest(ControllerTest):
@@ -3442,8 +3497,8 @@ class ServersViewBuilderTest(test.TestCase):
 
     def setUp(self):
         super(ServersViewBuilderTest, self).setUp()
-        CONF.set_override('host', 'localhost', group='glance')
         self.flags(use_ipv6=True)
+        self.flags(group='glance', api_servers=['http://localhost:9292'])
         nw_cache_info = self._generate_nw_cache_info()
         db_inst = fakes.stub_instance(
             id=1,

@@ -39,7 +39,6 @@ import nova.cells.weights.ram_by_instance_type
 import nova.cells.weights.weight_offset
 import nova.cert.rpcapi
 import nova.cloudpipe.pipelib
-import nova.cmd.novnc
 import nova.cmd.novncproxy
 import nova.cmd.serialproxy
 import nova.cmd.spicehtml5proxy
@@ -86,7 +85,6 @@ import nova.paths
 import nova.pci.request
 import nova.pci.whitelist
 import nova.quota
-import nova.rdp
 import nova.scheduler.driver
 import nova.scheduler.filter_scheduler
 import nova.scheduler.filters.aggregate_image_properties_isolation

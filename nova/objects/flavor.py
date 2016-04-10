@@ -14,21 +14,27 @@
 
 from oslo_db import exception as db_exc
 from oslo_db.sqlalchemy import utils as sqlalchemyutils
+from oslo_log import log as logging
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.expression import asc
+from sqlalchemy.sql import func
+from sqlalchemy.sql import text
 from sqlalchemy.sql import true
 
 from nova import db
 from nova.db.sqlalchemy import api as db_api
 from nova.db.sqlalchemy.api import require_context
 from nova.db.sqlalchemy import api_models
+from nova.db.sqlalchemy import models as main_models
 from nova import exception
+from nova.i18n import _LW
 from nova import objects
 from nova.objects import base
 from nova.objects import fields
 
 
+LOG = logging.getLogger(__name__)
 OPTIONAL_FIELDS = ['extra_specs', 'projects']
 DEPRECATED_FIELDS = ['deleted', 'deleted_at']
 
@@ -75,6 +81,123 @@ def _flavor_del_project(context, flavor_id, project_id):
     if result == 0:
         raise exception.FlavorAccessNotFound(flavor_id=flavor_id,
                                              project_id=project_id)
+
+
+@db_api.api_context_manager.writer
+def _flavor_extra_specs_add(context, flavor_id, specs, max_retries=10):
+    writer = db_api.api_context_manager.writer
+    for attempt in range(max_retries):
+        try:
+            spec_refs = context.session.query(
+                api_models.FlavorExtraSpecs).\
+                filter_by(flavor_id=flavor_id).\
+                filter(api_models.FlavorExtraSpecs.key.in_(
+                    specs.keys())).\
+                all()
+
+            existing_keys = set()
+            for spec_ref in spec_refs:
+                key = spec_ref["key"]
+                existing_keys.add(key)
+                with writer.savepoint.using(context):
+                    spec_ref.update({"value": specs[key]})
+
+            for key, value in specs.items():
+                if key in existing_keys:
+                    continue
+                spec_ref = api_models.FlavorExtraSpecs()
+                with writer.savepoint.using(context):
+                    spec_ref.update({"key": key, "value": value,
+                                     "flavor_id": flavor_id})
+                    context.session.add(spec_ref)
+
+            return specs
+        except db_exc.DBDuplicateEntry:
+            # a concurrent transaction has been committed,
+            # try again unless this was the last attempt
+            if attempt == max_retries - 1:
+                raise exception.FlavorExtraSpecUpdateCreateFailed(
+                    id=flavor_id, retries=max_retries)
+
+
+@db_api.api_context_manager.writer
+def _flavor_extra_specs_del(context, flavor_id, key):
+    result = context.session.query(api_models.FlavorExtraSpecs).\
+             filter_by(flavor_id=flavor_id).\
+             filter_by(key=key).\
+             delete()
+    if result == 0:
+        raise exception.FlavorExtraSpecsNotFound(
+            extra_specs_key=key, flavor_id=flavor_id)
+
+
+@db_api.api_context_manager.writer
+def _flavor_create(context, values):
+    specs = values.get('extra_specs')
+    db_specs = []
+    if specs:
+        for k, v in specs.items():
+            db_spec = api_models.FlavorExtraSpecs()
+            db_spec['key'] = k
+            db_spec['value'] = v
+            db_specs.append(db_spec)
+
+    projects = values.get('projects')
+    db_projects = []
+    if projects:
+        for project in set(projects):
+            db_project = api_models.FlavorProjects()
+            db_project['project_id'] = project
+            db_projects.append(db_project)
+
+    values['extra_specs'] = db_specs
+    values['projects'] = db_projects
+    db_flavor = api_models.Flavors()
+    db_flavor.update(values)
+
+    try:
+        db_flavor.save(context.session)
+    except db_exc.DBDuplicateEntry as e:
+        if 'flavorid' in e.columns:
+            raise exception.FlavorIdExists(flavor_id=values['flavorid'])
+        raise exception.FlavorExists(name=values['name'])
+    except Exception as e:
+        raise db_exc.DBError(e)
+
+    return _dict_with_extra_specs(db_flavor)
+
+
+@db_api.api_context_manager.writer
+def _flavor_destroy(context, flavor_id=None, name=None):
+    query = context.session.query(api_models.Flavors)
+
+    if flavor_id is not None:
+        query = query.filter(api_models.Flavors.id == flavor_id)
+    else:
+        query = query.filter(api_models.Flavors.name == name)
+    result = query.first()
+
+    if not result:
+        if flavor_id is not None:
+            raise exception.FlavorNotFound(flavor_id=flavor_id)
+        else:
+            raise exception.FlavorNotFoundByName(flavor_name=name)
+
+    context.session.query(api_models.FlavorProjects).\
+        filter_by(flavor_id=result.id).delete()
+    context.session.query(api_models.FlavorExtraSpecs).\
+        filter_by(flavor_id=result.id).delete()
+    context.session.delete(result)
+
+
+@db_api.main_context_manager.reader
+def _ensure_migrated(context):
+    result = context.session.query(main_models.InstanceTypes).\
+             filter_by(deleted=0).count()
+    if result:
+        LOG.warning(_LW('Main database contains %(count)i unmigrated flavors'),
+                    {'count': result})
+    return result == 0
 
 
 # TODO(berrange): Remove NovaObjectDictCompat
@@ -155,7 +278,11 @@ class Flavor(base.NovaPersistentObject, base.NovaObject,
             flavor.extra_specs = db_flavor['extra_specs']
 
         if 'projects' in expected_attrs:
-            flavor._load_projects()
+            if 'projects' in db_flavor:
+                flavor['projects'] = [x['project_id']
+                                      for x in db_flavor['projects']]
+            else:
+                flavor._load_projects()
 
         flavor.obj_reset_changes()
         return flavor
@@ -333,18 +460,34 @@ class Flavor(base.NovaPersistentObject, base.NovaObject,
         self._remove_access(project_id)
         self._load_projects()
 
+    @staticmethod
+    def _flavor_create(context, updates):
+        return _flavor_create(context, updates)
+
+    @staticmethod
+    def _ensure_migrated(context):
+        return _ensure_migrated(context)
+
     @base.remotable
     def create(self):
         if self.obj_attr_is_set('id'):
             raise exception.ObjectActionError(action='create',
                                               reason='already created')
+
+        # NOTE(danms): Once we have made it past a point where we know
+        # all flavors have been migrated, we can remove this. Ideally
+        # in Ocata with a blocker migration to be sure.
+        if not self._ensure_migrated(self._context):
+            raise exception.ObjectActionError(
+                action='create',
+                reason='main database still contains flavors')
+
         updates = self.obj_get_changes()
         expected_attrs = []
         for attr in OPTIONAL_FIELDS:
             if attr in updates:
                 expected_attrs.append(attr)
-        projects = updates.pop('projects', [])
-        db_flavor = db.flavor_create(self._context, updates, projects=projects)
+        db_flavor = self._flavor_create(self._context, updates)
         self._from_db_object(self._context, self, db_flavor,
                              expected_attrs=expected_attrs)
 
@@ -365,6 +508,14 @@ class Flavor(base.NovaPersistentObject, base.NovaObject,
             self._remove_access(project_id)
         self.obj_reset_changes(['projects'])
 
+    @staticmethod
+    def _flavor_extra_specs_add(context, flavor_id, specs, max_retries=10):
+        return _flavor_extra_specs_add(context, flavor_id, specs, max_retries)
+
+    @staticmethod
+    def _flavor_extra_specs_del(context, flavor_id, key):
+        return _flavor_extra_specs_del(context, flavor_id, key)
+
     @base.remotable
     def save_extra_specs(self, to_add=None, to_delete=None):
         """Add or delete extra_specs.
@@ -373,16 +524,23 @@ class Flavor(base.NovaPersistentObject, base.NovaObject,
         :param:to_delete: A list of keys to remove
         """
 
+        if self.in_api:
+            add_fn = self._flavor_extra_specs_add
+            del_fn = self._flavor_extra_specs_del
+            ident = self.id
+        else:
+            add_fn = db.flavor_extra_specs_update_or_create
+            del_fn = db.flavor_extra_specs_delete
+            ident = self.flavorid
+
         to_add = to_add if to_add is not None else {}
         to_delete = to_delete if to_delete is not None else []
 
         if to_add:
-            db.flavor_extra_specs_update_or_create(self._context,
-                                                   self.flavorid,
-                                                   to_add)
+            add_fn(self._context, ident, to_add)
 
         for key in to_delete:
-            db.flavor_extra_specs_delete(self._context, self.flavorid, key)
+            del_fn(self._context, ident, key)
         self.obj_reset_changes(['extra_specs'])
 
     def save(self):
@@ -417,9 +575,25 @@ class Flavor(base.NovaPersistentObject, base.NovaObject,
         if added_projects or deleted_projects:
             self.save_projects(added_projects, deleted_projects)
 
+    @staticmethod
+    def _flavor_destroy(context, flavor_id=None, name=None):
+        return _flavor_destroy(context, flavor_id=flavor_id, name=name)
+
     @base.remotable
     def destroy(self):
-        db.flavor_destroy(self._context, self.name)
+        # NOTE(danms): Historically the only way to delete a flavor
+        # is via name, which is not very precise. We need to be able to
+        # support the light construction of a flavor object and subsequent
+        # delete request with only our name filled out. However, if we have
+        # our id property, we should instead delete with that since it's
+        # far more specific.
+        try:
+            if 'id' in self:
+                self._flavor_destroy(self._context, flavor_id=self.id)
+            else:
+                self._flavor_destroy(self._context, name=self.name)
+        except exception.FlavorNotFound:
+            db.flavor_destroy(self._context, self.name)
 
 
 @db_api.api_context_manager.reader
@@ -509,3 +683,73 @@ class FlavorList(base.ObjectListBase, base.NovaObject):
         return base.obj_make_list(context, cls(context), objects.Flavor,
                                   api_db_flavors + db_flavors,
                                   expected_attrs=['extra_specs'])
+
+
+@db_api.main_context_manager.reader
+def _get_main_db_flavor_ids(context, limit):
+    # NOTE(danms): We don't need this imported at runtime, so
+    # keep it separate here
+    from nova.db.sqlalchemy import models
+    return [x[0] for x in context.session.query(models.InstanceTypes.id).
+            filter_by(deleted=0).
+            limit(limit)]
+
+
+@db_api.main_context_manager.writer
+def _destroy_flavor_hard(context, name):
+    # NOTE(danms): We don't need this imported at runtime, so
+    # keep it separate here
+    from nova.db.sqlalchemy import models
+    context.session.query(models.InstanceTypes).filter_by(name=name).delete()
+
+
+def migrate_flavors(ctxt, count, hard_delete=False):
+    main_db_ids = _get_main_db_flavor_ids(ctxt, count)
+    if not main_db_ids:
+        return 0, 0
+
+    count_all = len(main_db_ids)
+    count_hit = 0
+
+    for flavor_id in main_db_ids:
+        try:
+            flavor = Flavor.get_by_id(ctxt, flavor_id)
+            flavor_values = {field: getattr(flavor, field)
+                             for field in flavor.fields}
+            flavor._flavor_create(ctxt, flavor_values)
+            count_hit += 1
+            if hard_delete:
+                _destroy_flavor_hard(ctxt, flavor.name)
+            else:
+                db.flavor_destroy(ctxt, flavor.name)
+        except exception.FlavorNotFound:
+            LOG.warning(_LW('Flavor id %(id)i disappeared during migration'),
+                        {'id': flavor_id})
+        except (exception.FlavorExists, exception.FlavorIdExists) as e:
+            LOG.error(str(e))
+
+    return count_all, count_hit
+
+
+def _adjust_autoincrement(context, value):
+    engine = db_api.get_api_engine()
+    if engine.name == 'postgresql':
+        # NOTE(danms): If we migrated some flavors in the above function,
+        # then we will have confused postgres' sequence for the autoincrement
+        # primary key. MySQL does not care about this, but since postgres does,
+        # we need to reset this to avoid a failure on the next flavor creation.
+        engine.execute(
+            text('ALTER SEQUENCE flavors_id_seq RESTART WITH %i;' % (
+                value)))
+
+
+@db_api.api_context_manager.reader
+def _get_max_flavor_id(context):
+    max_id = context.session.query(func.max(api_models.Flavors.id)).one()[0]
+    return max_id or 0
+
+
+def migrate_flavor_reset_autoincrement(ctxt, count):
+    max_id = _get_max_flavor_id(ctxt)
+    _adjust_autoincrement(ctxt, max_id + 1)
+    return 0, 0

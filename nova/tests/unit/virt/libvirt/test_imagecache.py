@@ -22,7 +22,6 @@ import time
 import mock
 from oslo_concurrency import lockutils
 from oslo_concurrency import processutils
-from oslo_config import cfg
 from oslo_log import formatters
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
@@ -30,6 +29,7 @@ from oslo_utils import importutils
 from six.moves import cStringIO
 
 from nova import conductor
+import nova.conf
 from nova import context
 from nova import objects
 from nova import test
@@ -38,8 +38,7 @@ from nova import utils
 from nova.virt.libvirt import imagecache
 from nova.virt.libvirt import utils as libvirt_utils
 
-CONF = cfg.CONF
-CONF.import_opt('compute_manager', 'nova.service')
+CONF = nova.conf.CONF
 CONF.import_opt('host', 'nova.netconf')
 
 
@@ -700,13 +699,11 @@ class ImageCacheManagerTestCase(test.NoDBTestCase):
         self.stub_out('os.remove', lambda x: remove(x))
 
         self.mox.StubOutWithMock(objects.block_device.BlockDeviceMappingList,
-                   'get_by_instance_uuid')
+                   'bdms_by_instance_uuid')
 
         ctxt = context.get_admin_context()
-        objects.block_device.BlockDeviceMappingList.get_by_instance_uuid(
-                ctxt, '123').AndReturn(None)
-        objects.block_device.BlockDeviceMappingList.get_by_instance_uuid(
-                ctxt, '456').AndReturn(None)
+        objects.block_device.BlockDeviceMappingList.bdms_by_instance_uuid(
+                ctxt, ['123', '456']).AndReturn({})
 
         self.mox.ReplayAll()
         # And finally we can make the call we're actually testing...
@@ -797,13 +794,11 @@ class ImageCacheManagerTestCase(test.NoDBTestCase):
 
             self.mox.StubOutWithMock(
                 objects.block_device.BlockDeviceMappingList,
-                'get_by_instance_uuid')
+                'bdms_by_instance_uuid')
 
             ctxt = context.get_admin_context()
-            objects.block_device.BlockDeviceMappingList.get_by_instance_uuid(
-                ctxt, '123').AndReturn(None)
-            objects.block_device.BlockDeviceMappingList.get_by_instance_uuid(
-                ctxt, '456').AndReturn(None)
+            objects.block_device.BlockDeviceMappingList.bdms_by_instance_uuid(
+                ctxt, ['123', '456']).AndReturn({})
 
             self.mox.ReplayAll()
 

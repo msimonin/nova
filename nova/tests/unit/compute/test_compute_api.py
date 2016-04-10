@@ -19,6 +19,7 @@ import datetime
 import iso8601
 import mock
 from mox3 import mox
+from oslo_messaging import exceptions as oslo_exceptions
 from oslo_policy import policy as oslo_policy
 from oslo_serialization import jsonutils
 from oslo_utils import fixture as utils_fixture
@@ -1872,6 +1873,30 @@ class _ComputeAPIUnitTestMixIn(object):
         instance = self._create_instance_obj(params=paused_state)
         self._live_migrate_instance(instance)
 
+    @mock.patch.object(compute_utils, 'add_instance_fault_from_exc')
+    @mock.patch.object(objects.RequestSpec, 'get_by_instance_uuid')
+    @mock.patch.object(objects.InstanceAction, 'action_start')
+    @mock.patch.object(objects.Instance, 'save')
+    def test_live_migrate_messaging_timeout(self, _save, _action, get_spec,
+                                            add_instance_fault_from_exc):
+        instance = self._create_instance_obj()
+        if self.cell_type == 'api':
+            api = self.compute_api.cells_rpcapi
+        else:
+            api = conductor.api.ComputeTaskAPI
+
+        with mock.patch.object(api, 'live_migrate_instance',
+                               side_effect=oslo_exceptions.MessagingTimeout):
+            self.assertRaises(oslo_exceptions.MessagingTimeout,
+                              self.compute_api.live_migrate,
+                              self.context, instance,
+                              host_name='fake_dest_host',
+                              block_migration=True, disk_over_commit=True)
+            add_instance_fault_from_exc.assert_called_once_with(
+                self.context,
+                instance,
+                mock.ANY)
+
     @mock.patch.object(objects.RequestSpec, 'get_by_instance_uuid')
     @mock.patch.object(objects.Instance, 'save')
     @mock.patch.object(objects.InstanceAction, 'action_start')
@@ -2289,7 +2314,8 @@ class _ComputeAPIUnitTestMixIn(object):
         bdm = fake_block_device.FakeDbBlockDeviceDict(
                 {'no_device': False, 'volume_id': '1', 'boot_index': 0,
                  'connection_info': 'inf', 'device_name': '/dev/vda',
-                 'source_type': 'volume', 'destination_type': 'volume'})
+                 'source_type': 'volume', 'destination_type': 'volume',
+                 'tag': None})
         instance_bdms.append(bdm)
 
         expect_meta['properties']['bdm_v2'] = True
@@ -2300,7 +2326,8 @@ class _ComputeAPIUnitTestMixIn(object):
              'volume_size': None, 'source_type': 'snapshot',
              'device_type': None, 'snapshot_id': '1-snapshot',
              'device_name': '/dev/vda',
-             'destination_type': 'volume', 'delete_on_termination': False})
+             'destination_type': 'volume', 'delete_on_termination': False,
+             'tag': None})
 
         # All the db_only fields and the volume ones are removed
         self.compute_api.snapshot_volume_backed(
@@ -2327,7 +2354,8 @@ class _ComputeAPIUnitTestMixIn(object):
                 {'no_device': False, 'volume_id': None, 'boot_index': -1,
                  'connection_info': 'inf', 'device_name': '/dev/vdh',
                  'source_type': 'blank', 'destination_type': 'local',
-                 'guest_format': 'swap', 'delete_on_termination': True})
+                 'guest_format': 'swap', 'delete_on_termination': True,
+                 'tag': None})
         instance_bdms.append(bdm)
         expect_meta['properties']['block_device_mapping'].append(
             {'guest_format': 'swap', 'boot_index': -1, 'no_device': False,
@@ -2335,11 +2363,12 @@ class _ComputeAPIUnitTestMixIn(object):
              'volume_size': None, 'source_type': 'blank',
              'device_type': None, 'snapshot_id': None,
              'device_name': '/dev/vdh',
-             'destination_type': 'local', 'delete_on_termination': True})
+             'destination_type': 'local', 'delete_on_termination': True,
+             'tag': None})
 
         quiesced = [False, False]
 
-        # Check that the mappgins from the image properties are not included
+        # Check that the mappings from the image properties are not included
         self.compute_api.snapshot_volume_backed(
             self.context, instance, 'test-snapshot')
 
@@ -2952,7 +2981,8 @@ class _ComputeAPIUnitTestMixIn(object):
         @mock.patch.object(self.compute_api, '_create_block_device_mapping')
         @mock.patch.object(objects.RequestSpec, 'from_components')
         @mock.patch.object(objects, 'BuildRequest')
-        def do_test(_mock_build_req,
+        @mock.patch.object(objects.InstanceMapping, 'create')
+        def do_test(_mock_inst_mapping_create, _mock_build_req,
                 mock_req_spec_from_components, _mock_create_bdm,
                 _mock_validate_bdm, _mock_ensure_default, _mock_create,
                 mock_check_num_inst_quota):
@@ -3023,9 +3053,11 @@ class _ComputeAPIUnitTestMixIn(object):
         @mock.patch.object(self.compute_api, '_create_block_device_mapping')
         @mock.patch.object(objects.RequestSpec, 'from_components')
         @mock.patch.object(objects, 'BuildRequest')
-        def do_test(mock_build_req, mock_req_spec_from_components,
-                _mock_create_bdm, _mock_validate_bdm, _mock_ensure_default,
-                _mock_inst_create, _mock_inst_save, mock_check_num_inst_quota):
+        @mock.patch.object(objects.InstanceMapping, 'create')
+        def do_test(_mock_inst_mapping_create, mock_build_req,
+                mock_req_spec_from_components, _mock_create_bdm,
+                _mock_validate_bdm, _mock_ensure_default, _mock_inst_create,
+                _mock_inst_save, mock_check_num_inst_quota):
             quota_mock = mock.MagicMock()
             req_spec_mock = mock.MagicMock()
             build_req_mock = mock.MagicMock()
@@ -3121,6 +3153,75 @@ class _ComputeAPIUnitTestMixIn(object):
                     ]
             mock_build_req.assert_has_calls(build_req_calls)
 
+        do_test()
+
+    def test_provision_instances_creates_instance_mapping(self):
+        @mock.patch.object(self.compute_api, '_check_num_instances_quota')
+        @mock.patch.object(objects.Instance, 'create', new=mock.MagicMock())
+        @mock.patch.object(self.compute_api.security_group_api,
+                'ensure_default', new=mock.MagicMock())
+        @mock.patch.object(self.compute_api, '_validate_bdm',
+                new=mock.MagicMock())
+        @mock.patch.object(self.compute_api, '_create_block_device_mapping',
+                new=mock.MagicMock())
+        @mock.patch.object(objects.RequestSpec, 'from_components',
+                mock.MagicMock())
+        @mock.patch.object(objects, 'BuildRequest', new=mock.MagicMock())
+        @mock.patch('nova.objects.InstanceMapping')
+        def do_test(mock_inst_mapping, mock_check_num_inst_quota):
+            quota_mock = mock.MagicMock()
+            inst_mapping_mock = mock.MagicMock()
+
+            mock_check_num_inst_quota.return_value = (1, quota_mock)
+            mock_inst_mapping.return_value = inst_mapping_mock
+
+            ctxt = context.RequestContext('fake-user', 'fake-project')
+            flavor = self._create_flavor()
+            min_count = max_count = 1
+            boot_meta = {
+                'id': 'fake-image-id',
+                'properties': {'mappings': []},
+                'status': 'fake-status',
+                'location': 'far-away'}
+            base_options = {'image_ref': 'fake-ref',
+                            'display_name': 'fake-name',
+                            'project_id': 'fake-project',
+                            'availability_zone': None,
+                            'metadata': {},
+                            'access_ip_v4': None,
+                            'access_ip_v6': None,
+                            'config_drive': None,
+                            'key_name': None,
+                            'numa_topology': None,
+                            'pci_requests': None}
+            security_groups = {}
+            block_device_mapping = [objects.BlockDeviceMapping(
+                    **fake_block_device.FakeDbBlockDeviceDict(
+                    {
+                     'id': 1,
+                     'volume_id': 1,
+                     'source_type': 'volume',
+                     'destination_type': 'volume',
+                     'device_name': 'vda',
+                     'boot_index': 0,
+                     }))]
+            shutdown_terminate = True
+            instance_group = None
+            check_server_group_quota = False
+            filter_properties = {'scheduler_hints': None,
+                    'instance_type': flavor}
+
+            instances = self.compute_api._provision_instances(ctxt, flavor,
+                    min_count, max_count, base_options, boot_meta,
+                    security_groups, block_device_mapping, shutdown_terminate,
+                    instance_group, check_server_group_quota,
+                    filter_properties)
+            self.assertTrue(uuidutils.is_uuid_like(instances[0].uuid))
+
+            self.assertEqual(instances[0].uuid,
+                    inst_mapping_mock.instance_uuid)
+            self.assertIsNone(inst_mapping_mock.cell_mapping)
+            self.assertEqual(ctxt.project_id, inst_mapping_mock.project_id)
         do_test()
 
     def _test_rescue(self, vm_state=vm_states.ACTIVE, rescue_password=None,

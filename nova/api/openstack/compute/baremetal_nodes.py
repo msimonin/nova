@@ -127,11 +127,11 @@ class BareMetalNodeController(wsgi.Controller):
 
     @extensions.expected_errors(400)
     def create(self, req, body):
-        _no_ironic_proxy("port-create")
+        _no_ironic_proxy("node-create")
 
     @extensions.expected_errors(400)
     def delete(self, req, id):
-        _no_ironic_proxy("port-create")
+        _no_ironic_proxy("node-delete")
 
     @wsgi.action('add_interface')
     @extensions.expected_errors(400)

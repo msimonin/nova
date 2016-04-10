@@ -56,7 +56,6 @@ from nova import utils
 
 
 CONF = cfg.CONF
-CONF.import_opt('enabled', 'nova.api.openstack', group='osapi_v21')
 
 logging.register_options(CONF)
 CONF.set_override('use_stderr', False)
@@ -214,6 +213,7 @@ class TestCase(testtools.TestCase):
         if self.USES_DB:
             self.useFixture(nova_fixtures.Database())
             self.useFixture(nova_fixtures.Database(database='api'))
+            self.useFixture(nova_fixtures.DefaultFlavorsFixture())
         elif not self.USES_DB_SELF:
             self.useFixture(nova_fixtures.DatabasePoisonFixture())
 

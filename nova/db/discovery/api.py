@@ -69,6 +69,21 @@ from nova.objects import fields
 from nova import quota
 from nova import safe_utils
 
+from nova.db.discovery.context import RomeContextManager
+from nova.db.discovery.context import RomeRequestContext
+
+def to_list(x, default=None):
+    if x is None:
+        return default
+    if not isinstance(x, collections.Iterable) or \
+            isinstance(x, six.string_types):
+        return [x]
+    elif isinstance(x, list):
+        return x
+    else:
+        return list(x)
+
+
 db_opts = [
     cfg.StrOpt('osapi_compute_unique_server_name_scope',
                default='',
@@ -177,30 +192,8 @@ def create_context_manager(connection=None):
     return ctxt_mgr
 
 
-from nova.context import RequestContext
 import functools
-
-class RomeTransactionContext():
-    def __init__(self, mode=None):
-        if not mode:
-            self.writer = RomeTransactionContext(mode="writer")
-            self.reader = RomeTransactionContext(mode="reader")
-        pass
-
-class RomeRequestContext(object):
-    def __init__(self, *args, **kwargs):
-        # self.ctxt = RequestContext(*args, **kwargs)
-        self.session = RomeSession()
-
-    def load_context(self, context):
-        filter_attributes = ["session"]
-        for (attr_name, attr_value) in context.__dict__.iteritems():
-            if attr_name not in filter_attributes:
-                # print(attr_name)
-                setattr(self, attr_name, attr_value)
-
-class RomeContextManager(object):
-    pass
+from lib.rome.core.session.session import DBDeadlock
 
 def wrapp_with_session(f):
     """Decorator to use a writer db context manager.
@@ -214,7 +207,11 @@ def wrapp_with_session(f):
         new_context = RomeRequestContext()
         new_context.load_context(context)
         with new_context.session.begin():
-            return f(new_context, *args, **kwargs)
+            try:
+                result = f(new_context, *args, **kwargs)
+            except DBDeadlock:
+                pass
+        return result
     return wrapped
 
 def get_context_manager(context):
@@ -307,21 +304,8 @@ def select_db_reader_mode(f):
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        wrapped_func = safe_utils.get_wrapped_function(f)
-        keyed_args = inspect.getcallargs(wrapped_func, *args, **kwargs)
-
-        context = keyed_args['context']
-        use_slave = keyed_args.get('use_slave', False)
-
-        if use_slave:
-            reader_mode = main_context_manager.async
-        else:
-            reader_mode = wrapp_with_session
-
-        with reader_mode.using(context):
-            return f(*args, **kwargs)
+        return f(*args, **kwargs)
     return wrapper
-
 
 # def wrapp_with_session(f):
 #     """Decorator to use a writer db context manager.
@@ -420,18 +404,73 @@ def select_db_reader_mode(f):
 from lib.rome.core.orm.query import or_
 from lib.rome.core.orm.query import and_
 from lib.rome.core.orm.query import Query as RomeQuery
-from lib.rome.core.session.session import Session as RomeSession
-from lib.rome.core.session.session import OldSession as OldRomeSession
-from lib.rome.core.session.session import SessionDeadlock
+
+
 from nova.db.discovery import models
 from collections import namedtuple
 import random
 
 # TODO: modified model_query
-def model_query(context, *args, **kwargs):
-    # base_model = kwargs["base_model"]
-    # models = args
-    return RomeQuery(*args, **kwargs)
+def model_query(context, model,
+                args=None,
+                read_deleted=None,
+                project_only=False):
+    """Query helper that accounts for context's `read_deleted` field.
+
+    :param context:     NovaContext of the query.
+    :param model:       Model to query. Must be a subclass of ModelBase.
+    :param args:        Arguments to query. If None - model is used.
+    :param read_deleted: If not None, overrides context's read_deleted field.
+                        Permitted values are 'no', which does not return
+                        deleted values; 'only', which only returns deleted
+                        values; and 'yes', which does not filter deleted
+                        values.
+    :param project_only: If set and context is user-type, then restrict
+                        query to match the context's project_id. If set to
+                        'allow_none', restriction includes project_id = None.
+    """
+
+    if read_deleted is None:
+        read_deleted = context.read_deleted
+
+    if type(context) is not RomeRequestContext:
+        rome_context = RomeRequestContext()
+        rome_context.load_context(context)
+        context = rome_context
+
+    # NOTE(msimonin) args may be tuple (see compute_node_statistics)
+    # we deconstruct them
+    if isinstance(args, tuple):
+        query = RomeQuery(model, context.session, *args)
+    else:
+        query = RomeQuery(model, context.session, args)
+
+    query_kwargs = {}
+    if 'no' == read_deleted:
+        query_kwargs['deleted'] = 0
+        query = query.filter_by(deleted=0)
+    elif 'only' == read_deleted:
+        query_kwargs['deleted'] = 1
+        query = query.filter_by(deleted=1)
+    elif 'yes' == read_deleted:
+        pass
+    else:
+        raise ValueError(_("Unrecognized read_deleted value '%s'")
+                           % read_deleted)
+    rows = query.all()
+    print(rows)
+
+    # We can't use oslo.db model_query's project_id here, as it doesn't allow
+    # us to return both our projects and unowned projects.
+    if nova.context.is_user_context(context) and project_only:
+        if project_only == 'allow_none':
+            query = query.\
+                filter(or_(model.project_id == context.project_id,
+                           model.project_id == null()))
+        else:
+            query = query.filter_by(project_id=context.project_id)
+
+    return query
 
 def convert_objects_related_datetimes(values, *datetime_keys):
     if not datetime_keys:
@@ -562,11 +601,14 @@ def service_get(context, service_id):
 
 @wrapp_with_session
 def service_get_minimum_version(context, binary):
-    min_version = context.session.query(
-        func.min(models.Service.version)).\
-                         filter(models.Service.binary == binary).\
-                         filter(models.Service.forced_down == false()).\
-                         scalar()
+    # min_version = context.session.query(
+    #    func.min(models.Service.version)).\
+    #                     filter(models.Service.binary == binary).\
+    #                     filter(models.Service.forced_down == false()).\
+    #                     scalar()
+    # Note(msimonin): due to a bug in ROME, we bypass the
+    # calculation of the minimum version
+    min_version = None
     return min_version
 
 
@@ -676,174 +718,26 @@ def service_update(context, service_id, values):
 
 
 def _compute_node_select(context, filters=None):
-    # NOTE(jaypipes): With the addition of the resource-providers database
-    # schema, inventory and allocation information for various resources
-    # on a compute node are to be migrated from the compute_nodes and
-    # instance_extra tables into the new inventories and allocations tables.
-    # During the time that this data migration is ongoing we need to allow
-    # the scheduler to essentially be blind to the underlying database
-    # schema changes. So, this query here returns three sets of resource
-    # attributes:
-    #  - inv_memory_mb, inv_memory_mb_used, inv_memory_mb_reserved,
-    #    inv_ram_allocation_ratio
-    #  - inv_vcpus, inv_vcpus_used, inv_cpu_allocation_ratio
-    #  - inv_local_gb, inv_local_gb_used, inv_disk_allocation_ratio
-    # These resource capacity/usage fields store the total and used values
-    # for those three resource classes that are currently store in similar
-    # fields in the compute_nodes table (e.g. memory_mb and memory_mb_used)
-    # The code that runs the online data migrations will be able to tell if
-    # the compute node has had its inventory information moved to the
-    # inventories table by checking for a non-None field value for the
-    # inv_memory_mb, inv_vcpus, and inv_disk_gb fields.
-    #
-    # The below SQLAlchemy code below produces the following SQL statement
-    # exactly:
-    #
-    # SELECT
-    #   cn.*,
-    #   ram_inv.total as inv_memory_mb,
-    #   ram_inv.reserved as inv_memory_mb_reserved,
-    #   ram_inv.allocation_ratio as inv_ram_allocation_ratio,
-    #   ram_usage.used as inv_memory_mb_used,
-    #   cpu_inv.total as inv_vcpus,
-    #   cpu_inv.allocation_ratio as inv_cpu_allocation_ratio,
-    #   cpu_usage.used as inv_vcpus_used,
-    #   disk_inv.total as inv_local_gb,
-    #   disk_inv.allocation_ratio as inv_disk_allocation_ratio,
-    #   disk_usage.used as inv_local_gb_used
-    # FROM compute_nodes AS cn
-    #   LEFT OUTER JOIN resource_providers AS rp
-    #     ON cn.uuid = rp.uuid
-    #   LEFT OUTER JOIN inventories AS ram_inv
-    #     ON rp.id = ram_inv.resource_provider_id
-    #     AND ram_inv.resource_class_id = :RAM_MB
-    #   LEFT OUTER JOIN (
-    #     SELECT resource_provider_id, SUM(used) as used
-    #     FROM allocations
-    #     WHERE resource_class_id = :RAM_MB
-    #     GROUP BY resource_provider_id
-    #   ) AS ram_usage
-    #     ON ram_inv.resource_provider_id = ram_usage.resource_provider_id
-    #   LEFT OUTER JOIN inventories AS cpu_inv
-    #     ON rp.id = cpu_inv.resource_provider_id
-    #     AND cpu_inv.resource_class_id = :VCPUS
-    #   LEFT OUTER JOIN (
-    #     SELECT resource_provider_id, SUM(used) as used
-    #     FROM allocations
-    #     WHERE resource_class_id = :VCPUS
-    #     GROUP BY resource_provider_id
-    #   ) AS cpu_usage
-    #     ON cpu_inv.resource_provider_id = cpu_usage.resource_provider_id
-    #   LEFT OUTER JOIN inventories AS disk_inv
-    #     ON rp.id = disk_inv.resource_provider_id
-    #     AND disk_inv.resource_class_id = :DISK_GB
-    #   LEFT OUTER JOIN (
-    #     SELECT resource_provider_id, SUM(used) as used
-    #     FROM allocations
-    #     WHERE resource_class_id = :DISK_GB
-    #     GROUP BY resource_provider_id
-    #   ) AS disk_usage
-    #     ON disk_inv.resource_provider_id = disk_usage.resource_provider_id
-    # WHERE cn.deleted = 0;
     if filters is None:
         filters = {}
 
-    RAM_MB = fields.ResourceClass.index(fields.ResourceClass.MEMORY_MB)
-    VCPU = fields.ResourceClass.index(fields.ResourceClass.VCPU)
-    DISK_GB = fields.ResourceClass.index(fields.ResourceClass.DISK_GB)
+    query = model_query(context, models.ComputeNode)
 
-    cn_tbl = sa.alias(models.ComputeNode.__table__, name='cn')
-    rp_tbl = sa.alias(models.ResourceProvider.__table__, name='rp')
-    inv_tbl = models.Inventory.__table__
-    alloc_tbl = models.Allocation.__table__
-    ram_inv = sa.alias(inv_tbl, name='ram_inv')
-    cpu_inv = sa.alias(inv_tbl, name='cpu_inv')
-    disk_inv = sa.alias(inv_tbl, name='disk_inv')
-
-    ram_usage = sa.select([alloc_tbl.c.resource_provider_id,
-                           sql.func.sum(alloc_tbl.c.used).label('used')])
-    ram_usage = ram_usage.where(alloc_tbl.c.resource_class_id == RAM_MB)
-    ram_usage = ram_usage.group_by(alloc_tbl.c.resource_provider_id)
-    ram_usage = sa.alias(ram_usage, name='ram_usage')
-
-    cpu_usage = sa.select([alloc_tbl.c.resource_provider_id,
-                           sql.func.sum(alloc_tbl.c.used).label('used')])
-    cpu_usage = cpu_usage.where(alloc_tbl.c.resource_class_id == VCPU)
-    cpu_usage = cpu_usage.group_by(alloc_tbl.c.resource_provider_id)
-    cpu_usage = sa.alias(cpu_usage, name='cpu_usage')
-
-    disk_usage = sa.select([alloc_tbl.c.resource_provider_id,
-                           sql.func.sum(alloc_tbl.c.used).label('used')])
-    disk_usage = disk_usage.where(alloc_tbl.c.resource_class_id == DISK_GB)
-    disk_usage = disk_usage.group_by(alloc_tbl.c.resource_provider_id)
-    disk_usage = sa.alias(disk_usage, name='disk_usage')
-
-    cn_rp_join = sql.outerjoin(
-        cn_tbl, rp_tbl,
-        cn_tbl.c.uuid == rp_tbl.c.uuid)
-    ram_inv_join = sql.outerjoin(
-        cn_rp_join, ram_inv,
-        sql.and_(rp_tbl.c.id == ram_inv.c.resource_provider_id,
-                 ram_inv.c.resource_class_id == RAM_MB))
-    ram_join = sql.outerjoin(
-        ram_inv_join, ram_usage,
-        ram_inv.c.resource_provider_id == ram_usage.c.resource_provider_id)
-    cpu_inv_join = sql.outerjoin(
-        ram_join, cpu_inv,
-        sql.and_(rp_tbl.c.id == cpu_inv.c.resource_provider_id,
-                 cpu_inv.c.resource_class_id == VCPU))
-    cpu_join = sql.outerjoin(
-        cpu_inv_join, cpu_usage,
-        cpu_inv.c.resource_provider_id == cpu_usage.c.resource_provider_id)
-    disk_inv_join = sql.outerjoin(
-        cpu_join, disk_inv,
-        sql.and_(rp_tbl.c.id == disk_inv.c.resource_provider_id,
-                 disk_inv.c.resource_class_id == DISK_GB))
-    disk_join = sql.outerjoin(
-        disk_inv_join, disk_usage,
-        disk_inv.c.resource_provider_id == disk_usage.c.resource_provider_id)
-    # TODO(jaypipes): Remove all capacity and usage fields from this method
-    # entirely and deal with allocations and inventory information in a
-    # tabular fashion instead of a columnar fashion like the legacy
-    # compute_nodes table schema does.
-    inv_cols = [
-        ram_inv.c.total.label('inv_memory_mb'),
-        ram_inv.c.reserved.label('inv_memory_mb_reserved'),
-        ram_inv.c.allocation_ratio.label('inv_ram_allocation_ratio'),
-        ram_usage.c.used.label('inv_memory_mb_used'),
-        cpu_inv.c.total.label('inv_vcpus'),
-        cpu_inv.c.allocation_ratio.label('inv_cpu_allocation_ratio'),
-        cpu_usage.c.used.label('inv_vcpus_used'),
-        disk_inv.c.total.label('inv_local_gb'),
-        disk_inv.c.reserved.label('inv_local_gb_reserved'),
-        disk_inv.c.allocation_ratio.label('inv_disk_allocation_ratio'),
-        disk_usage.c.used.label('inv_local_gb_used'),
-    ]
-    cols_in_output = list(cn_tbl.c)
-    cols_in_output.extend(inv_cols)
-
-    select = sa.select(cols_in_output).select_from(disk_join)
-
-    if context.read_deleted == "no":
-        select = select.where(cn_tbl.c.deleted == 0)
     if "compute_id" in filters:
-        select = select.where(cn_tbl.c.id == filters["compute_id"])
+        query = query.filter(models.ComputeNode.id == filters["compute_id"])
     if "service_id" in filters:
-        select = select.where(cn_tbl.c.service_id == filters["service_id"])
+        query = query.filter(models.ComputeNode.service_id == filters["service_id"])
     if "host" in filters:
-        select = select.where(cn_tbl.c.host == filters["host"])
+        query = query.filter(models.ComputeNode.host == filters["host"])
     if "hypervisor_hostname" in filters:
-        hyp_hostname = filters["hypervisor_hostname"]
-        select = select.where(cn_tbl.c.hypervisor_hostname == hyp_hostname)
+        query = query.filter(models.ComputeNode.hypervisor_hostname == filters["hypervisor_hostname"])
 
-    engine = get_engine(context)
-    conn = engine.connect()
 
-    results = conn.execute(select).fetchall()
+    results = query.all()
 
     # Callers expect dict-like objects, not SQLAlchemy RowProxy objects...
-    results = [dict(r) for r in results]
-    conn.close()
+    # results = [dict(r) for r in results]
+
     return results
 
 
@@ -950,36 +844,55 @@ def compute_node_delete(context, compute_id):
 def compute_node_statistics(context):
     """Compute statistics over all compute nodes."""
 
+    # NOTE(disco/msimonin): Use a simplified version of getting ressource for now
     # TODO(sbauza): Remove the service_id filter in a later release
     # once we are sure that all compute nodes report the host field
-    _filter = or_(models.Service.host == models.ComputeNode.host,
-                  models.Service.id == models.ComputeNode.service_id)
-
+    # _filter = or_(models.Service.host == models.ComputeNode.host,
+    #               models.Service.id == models.ComputeNode.service_id)
+    #
+    # result = model_query(context,
+    #                      models.ComputeNode, (
+    #                          func.count(models.ComputeNode.id),
+    #                          func.sum(models.ComputeNode.vcpus),
+    #                          func.sum(models.ComputeNode.memory_mb),
+    #                          func.sum(models.ComputeNode.local_gb),
+    #                          func.sum(models.ComputeNode.vcpus_used),
+    #                          func.sum(models.ComputeNode.memory_mb_used),
+    #                          func.sum(models.ComputeNode.local_gb_used),
+    #                          func.sum(models.ComputeNode.free_ram_mb),
+    #                          func.sum(models.ComputeNode.free_disk_gb),
+    #                          func.sum(models.ComputeNode.current_workload),
+    #                          func.sum(models.ComputeNode.running_vms),
+    #                          func.sum(models.ComputeNode.disk_available_least),
+    #                      ), read_deleted="no").\
+    #                      filter(models.Service.disabled == false()).\
+    #                      filter(models.Service.binary == "nova-compute").\
+    #                      filter(_filter).\
+    #                      first()
     result = model_query(context,
-                         models.ComputeNode, (
-                             func.count(models.ComputeNode.id),
-                             func.sum(models.ComputeNode.vcpus),
-                             func.sum(models.ComputeNode.memory_mb),
-                             func.sum(models.ComputeNode.local_gb),
-                             func.sum(models.ComputeNode.vcpus_used),
-                             func.sum(models.ComputeNode.memory_mb_used),
-                             func.sum(models.ComputeNode.local_gb_used),
-                             func.sum(models.ComputeNode.free_ram_mb),
-                             func.sum(models.ComputeNode.free_disk_gb),
-                             func.sum(models.ComputeNode.current_workload),
-                             func.sum(models.ComputeNode.running_vms),
-                             func.sum(models.ComputeNode.disk_available_least),
-                         ), read_deleted="no").\
-                         filter(models.Service.disabled == false()).\
-                         filter(models.Service.binary == "nova-compute").\
-                         filter(_filter).\
-                         first()
+                 models.ComputeNode,
+                 (func.count(models.ComputeNode.id),
+                 func.sum(models.ComputeNode.vcpus),
+                 func.sum(models.ComputeNode.memory_mb),
+                 func.sum(models.ComputeNode.local_gb),
+                 func.sum(models.ComputeNode.vcpus_used),
+                 func.sum(models.ComputeNode.memory_mb_used),
+                 func.sum(models.ComputeNode.local_gb_used),
+                 func.sum(models.ComputeNode.free_ram_mb),
+                 func.sum(models.ComputeNode.free_disk_gb),
+                 func.sum(models.ComputeNode.current_workload),
+                 func.sum(models.ComputeNode.running_vms),
+                 func.sum(models.ComputeNode.disk_available_least)),
+                 read_deleted="no"
+                 ).first()
 
     # Build a dict of the info--making no assumptions about result
     fields = ('count', 'vcpus', 'memory_mb', 'local_gb', 'vcpus_used',
               'memory_mb_used', 'local_gb_used', 'free_ram_mb', 'free_disk_gb',
               'current_workload', 'running_vms', 'disk_available_least')
-    return {field: int(result[idx] or 0)
+    # NOTE(disco/msimonin) currently in ROME the first element of the result
+    # is a row itself.
+    return {field: int(result[idx + 1] or 0)
             for idx, field in enumerate(fields)}
 
 
@@ -1086,8 +999,15 @@ def floating_ip_allocate_address(context, project_id, pool,
 @wrapp_with_session
 def floating_ip_bulk_create(context, ips, want_result=True):
     try:
-        tab = models.FloatingIp().__table__
-        context.session.execute(tab.insert(), ips)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # tab = models.FloatingIp().__table__
+        # context.session.execute(tab.insert(), ips)
+        for ip in ips:
+            i = models.FloatingIp()
+            i.update(ip)
+            context.session.add(i)
+
     except db_exc.DBDuplicateEntry as e:
         raise exception.FloatingIpExists(address=e.value)
 
@@ -1516,8 +1436,15 @@ def fixed_ip_create(context, values):
 @wrapp_with_session
 def fixed_ip_bulk_create(context, ips):
     try:
-        tab = models.FixedIp.__table__
-        context.session.execute(tab.insert(), ips)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # tab = models.FixedIp.__table__
+        # context.session.execute(tab.insert(), ips)
+        for ip in ips:
+            i = models.FixedIp()
+            i.update(ip)
+            context.session.add(i)
+
     except db_exc.DBDuplicateEntry as e:
         raise exception.FixedIpExists(address=e.value)
 
@@ -2337,24 +2264,26 @@ def instance_get_all_by_filters_sort(context, filters, limit=None, marker=None,
                                 filters, exact_match_filter_names)
     if query_prefix is None:
         return []
-    query_prefix = _regex_instance_filter(query_prefix, filters)
+
+    print("ici?")
+    # query_prefix = _regex_instance_filter(query_prefix, filters)
     query_prefix = _tag_instance_filter(context, query_prefix, filters)
 
-    # paginate query
-    if marker is not None:
-        try:
-            marker = _instance_get_by_uuid(
-                    context.elevated(read_deleted='yes'), marker)
-        except exception.InstanceNotFound:
-            raise exception.MarkerNotFound(marker)
-    try:
-        query_prefix = sqlalchemyutils.paginate_query(query_prefix,
-                               models.Instance, limit,
-                               sort_keys,
-                               marker=marker,
-                               sort_dirs=sort_dirs)
-    except db_exc.InvalidSortKey:
-        raise exception.InvalidSortKey()
+    # # paginate query
+    # if marker is not None:
+    #     try:
+    #         marker = _instance_get_by_uuid(
+    #                 context.elevated(read_deleted='yes'), marker)
+    #     except exception.InstanceNotFound:
+    #         raise exception.MarkerNotFound(marker)
+    # try:
+    #     query_prefix = sqlalchemyutils.paginate_query(query_prefix,
+    #                            models.Instance, limit,
+    #                            sort_keys,
+    #                            marker=marker,
+    #                            sort_dirs=sort_dirs)
+    # except db_exc.InvalidSortKey:
+    #     raise exception.InvalidSortKey()
 
     return _instances_fill_metadata(context, query_prefix.all(), manual_joins)
 
@@ -2494,9 +2423,25 @@ def _exact_instance_filter(query, filters, legal_keys):
                         query = query.filter(column_attr.any(value=v))
 
             else:
+                metadata_class = None
+                if key == "metadata":
+                    metadata_class=models.InstanceMetadata
+                if key == "system_metadata":
+                    metadata_class = models.InstanceSystemMetadata
+                already_in_models=False
+                for model in query._models:
+                    if model._model == metadata_class:
+                        already_in_models=True
+                if not already_in_models:
+                    query = query.join(metadata_class)
+                    for model in query._models:
+                        if model._model == metadata_class:
+                            model.is_hidden=True
+                key_attribute = metadata_class.key
+                value_attribute = metadata_class.value
                 for k, v in value.items():
-                    query = query.filter(column_attr.any(key=k))
-                    query = query.filter(column_attr.any(value=v))
+                    query = query.filter(key_attribute == k)
+                    query = query.filter(value_attribute == v)
         elif isinstance(value, (list, tuple, set, frozenset)):
             if not value:
                 return None  # empty IN-predicate; short circuit
@@ -2679,13 +2624,19 @@ def instance_get_all_by_host_and_not_type(context, host, type_id=None):
 def instance_get_all_by_grantee_security_groups(context, group_ids):
     if not group_ids:
         return []
-    return _instances_fill_metadata(context,
-        _instance_get_all_query(context).
-            join(models.Instance.security_groups).
-            filter(models.SecurityGroup.rules.any(
-                models.SecurityGroupIngressRule.group_id.in_(group_ids))).
-            all())
+    parent_group_ids = []
+    for secgroup in RomeQuery(models.SecurityGroupIngressRule).filter(models.SecurityGroupIngressRule.group_id.in_(group_ids)):
+        parent_group_ids += [secgroup.parent_group_id]
 
+    query = RomeQuery(models.Instance).join(models.InstanceGroupMember, models.InstanceGroupMember.instance_id==models.Instance.id)
+    matching_results = query.all()
+    matching_results = filter(lambda x: x[0].group_id in parent_group_ids, matching_results)
+    matching_instances = map(lambda r: r[1], matching_results)
+    # Remove duplicates
+    result = {}
+    for instance in matching_instances:
+        result[instance.id] = instance
+    return result.values()
 
 @require_context
 @wrapp_with_session
@@ -2693,13 +2644,15 @@ def instance_floating_address_get_all(context, instance_uuid):
     if not uuidutils.is_uuid_like(instance_uuid):
         raise exception.InvalidUUID(uuid=instance_uuid)
 
-    floating_ips = model_query(context,
+    floating_ips_joined_with_fixed_ips = model_query(context,
                                models.FloatingIp,
                                (models.FloatingIp.address,)).\
-        join(models.FloatingIp.fixed_ip).\
-        filter_by(instance_uuid=instance_uuid)
-
-    return [floating_ip.address for floating_ip in floating_ips]
+        join(models.FixedIp, models.FloatingIp.fixed_ip_id==models.FixedIp.id).\
+        filter(models.FixedIp.instance_uuid==instance_uuid).all()
+    floating_ips = map(lambda x: x[1], floating_ips_joined_with_fixed_ips)
+    floating_addresses = [str(floating_ip.address) for floating_ip in floating_ips]
+    floating_addresses = sorted(floating_addresses)
+    return floating_addresses
 
 
 # NOTE(hanlind): This method can be removed as conductor RPC API moves to v2.0.
@@ -2758,8 +2711,22 @@ def instance_update_and_get_original(context, instance_uuid, values,
     """
     instance_ref = _instance_get_by_uuid(context, instance_uuid,
                                          columns_to_join=columns_to_join)
-    return (copy.copy(instance_ref), _instance_update(
-        context, instance_uuid, values, expected, original=instance_ref))
+    instance_ref_copy = models.Instance()
+    for key in instance_ref.to_dict():
+        if instance_ref[key] is not None:
+            try:
+                instance_ref_copy[key] = copy.copy(instance_ref[key])
+            except Exception as e:
+                pass
+    updated_instance_ref = _instance_update(
+        context, instance_uuid, values, expected, original=instance_ref)
+
+    if columns_to_join:
+        if 'metadata' not in columns_to_join:
+            updated_instance_ref.metadata = []
+        if 'system_metadata' not in columns_to_join:
+            updated_instance_ref.system_metadata = []
+    return (instance_ref, updated_instance_ref)
 
 
 # NOTE(danms): This updates the instance's metadata list in-place and in
@@ -2773,6 +2740,9 @@ def _instance_metadata_update_in_place(context, instance, metadata_type, model,
         key = keyvalue['key']
         if key in metadata:
             keyvalue['value'] = metadata.pop(key)
+            # TODO(jonathan): add a session.add here, to be sure that
+            # the object will be taken into account by session.
+            context.session.add(keyvalue)
         elif key not in metadata:
             to_delete.append(keyvalue)
 
@@ -2804,7 +2774,7 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
         expected = {}
     else:
         # Coerce all single values to singleton lists
-        expected = {k: [None] if v is None else sqlalchemyutils.to_list(v)
+        expected = {k: [None] if v is None else to_list(v)
                        for (k, v) in six.iteritems(expected)}
 
     # Extract 'expected_' values from values dict, as these aren't actually
@@ -2817,7 +2787,7 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
             if value is None:
                 expected[field] = [None]
             else:
-                expected[field] = sqlalchemyutils.to_list(value)
+                expected[field] = to_list(value)
 
     # Values which need to be updated separately
     metadata = values.pop('metadata', None)
@@ -2836,6 +2806,9 @@ def _instance_update(context, instance_uuid, values, expected, original=None):
     try:
         instance_ref = model_query(context, models.Instance).filter(models.Instance.uuid==instance_uuid).first()
         instance_ref.update(values)
+        for k,v in expected.iteritems():
+            if instance_ref[k] != expected[k]:
+                raise(update_match.NoRowsMatched())
         instance_ref.save()
         # instance_ref = model_query(context, models.Instance,
         #                            project_only=True).\
@@ -4243,7 +4216,8 @@ def block_device_mapping_update_or_create(context, values, legacy=True):
     else:
         # Either the device_name doesn't exist in the database yet, or no
         # device_name was provided. Both cases mean creating a new BDM.
-        result = models.BlockDeviceMapping(**values)
+        result = models.BlockDeviceMapping()
+        result.update(values)
         result.save(context.session)
 
     # NOTE(xqueralt): Prevent from having multiple swap devices for the
@@ -4339,7 +4313,12 @@ def security_group_create(context, values):
     try:
         # TODO(jonathan): "wrapp_with_session.savepoint.using" => ""
         # with wrapp_with_session.savepoint.using(context):
-        security_group_ref.save(context.session)
+        security_group_ref.save()
+        for instance in security_group_ref.instances:
+            member = models.InstanceGroupMember()
+            member.instance_id = instance.id
+            member.group_id = security_group_ref.id
+            member.save()
     except db_exc.DBDuplicateEntry:
         raise exception.SecurityGroupExists(
                 project_id=values['project_id'],
@@ -5105,10 +5084,10 @@ def flavor_get_all(context, inactive=False, filters=None,
         if not marker_row:
             raise exception.MarkerNotFound(marker)
 
-    query = sqlalchemyutils.paginate_query(query, models.InstanceTypes, limit,
-                                           [sort_key, 'id'],
-                                           marker=marker_row,
-                                           sort_dir=sort_dir)
+    # query = sqlalchemyutils.paginate_query(query, models.InstanceTypes, limit,
+    #                                       [sort_key, 'id'],
+    #                                       marker=marker_row,
+    #                                       sort_dir=sort_dir)
 
     inst_types = query.all()
 
@@ -5775,7 +5754,7 @@ def aggregate_create(context, values, metadata=None):
     if not aggregate:
         aggregate = models.Aggregate()
         aggregate.update(values)
-        aggregate.save(context.session)
+        aggregate.save(context.session, force=True)
         # We don't want these to be lazy loaded later.  We know there is
         # nothing here since we just created this aggregate.
         aggregate._hosts = []
@@ -5787,8 +5766,10 @@ def aggregate_create(context, values, metadata=None):
         # NOTE(pkholkin): '_metadata' attribute was updated during
         # 'aggregate_metadata_add' method, so it should be expired and
         # read from db
-        context.session.expire(aggregate, ['_metadata'])
+        #context.session.expire(aggregate, ['_metadata'])
         aggregate._metadata
+
+
 
     return aggregate
 
@@ -5823,7 +5804,8 @@ def aggregate_get_by_host(context, host, key=None):
     if key:
         query = query.join("_metadata").filter(
             models.AggregateMetadata.key == key)
-    return query.all()
+    rows = map(lambda x: x[0], query.all())
+    return rows
 
 
 @wrapp_with_session
@@ -5836,7 +5818,9 @@ def aggregate_metadata_get_by_host(context, host, key=None):
 
     if key:
         query = query.filter(models.AggregateMetadata.key == key)
-    rows = query.all()
+
+    # rows = query.all()
+    rows = map(lambda x: x[0], query.all())
 
     metadata = collections.defaultdict(set)
     for agg in rows:
@@ -5981,9 +5965,15 @@ def aggregate_metadata_add(context, aggregate_id, metadata, set_delete=False,
                                     "value": value,
                                     "aggregate_id": aggregate_id})
             if new_entries:
-                context.session.execute(
-                    models.AggregateMetadata.__table__.insert(),
-                    new_entries)
+                # NOTE(msimonin): context.session.execute isn't supported
+                # by ROME
+                # context.session.execute(
+                #     models.AggregateMetadata.__table__.insert(),
+                #     new_entries)
+                for new_entry in new_entries:
+                    am = models.AggregateMetadata()
+                    am.update(new_entry)
+                    context.session.add(am)
 
             return metadata
         except db_exc.DBDuplicateEntry:
@@ -6394,6 +6384,7 @@ def _archive_deleted_rows_for_table(tablename, max_rows):
     try:
         # Group the insert and delete in a transaction.
         with conn.begin():
+            # NOTE(msimonin): Not sure how to handle the following
             conn.execute(insert)
             result_delete = conn.execute(delete_statement)
     except db_exc.DBReferenceError as ex:
@@ -6881,9 +6872,16 @@ def instance_tag_set(context, instance_uuid, tags):
             synchronize_session=False)
 
     if to_add:
-        data = [
-            {'resource_id': instance_uuid, 'tag': tag} for tag in to_add]
-        context.session.execute(models.Tag.__table__.insert(), data)
+        # NOTE(msimonin): using context.session.add since execute isn't supported
+        # by ROME
+        # data = [
+        #     {'resource_id': instance_uuid, 'tag': tag} for tag in to_add]
+        # context.session.execute(models.Tag.__table__.insert(), data)
+        for t in to_add:
+            tag = models.Tag()
+            tag.id = instance_uuid + t
+            tag.update({'resource_id': instance_uuid, 'tag': t})
+            context.session.add(tag)
 
     return context.session.query(models.Tag).filter_by(
         resource_id=instance_uuid).all()

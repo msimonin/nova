@@ -18,7 +18,6 @@ import uuid
 
 import mock
 from mox3 import mox
-from oslo_config import cfg
 from oslo_policy import policy as oslo_policy
 from oslo_utils import uuidutils
 import webob
@@ -29,6 +28,7 @@ from nova.api.openstack.compute import servers as servers_v21
 from nova.compute import api as compute_api
 from nova.compute import task_states
 from nova.compute import vm_states
+import nova.conf
 from nova import exception
 from nova.image import glance
 from nova import objects
@@ -39,8 +39,7 @@ from nova.tests.unit import fake_block_device
 from nova.tests.unit import fake_instance
 from nova.tests.unit.image import fake
 
-CONF = cfg.CONF
-CONF.import_opt('password_length', 'nova.utils')
+CONF = nova.conf.CONF
 FAKE_UUID = fakes.FAKE_UUID
 INSTANCE_IDS = {FAKE_UUID: 1}
 
@@ -83,8 +82,7 @@ class ServerActionsControllerTestV21(test.TestCase):
 
     def setUp(self):
         super(ServerActionsControllerTestV21, self).setUp()
-
-        CONF.set_override('host', 'localhost', group='glance')
+        self.flags(group='glance', api_servers=['http://localhost:9292'])
         self.stub_out('nova.db.instance_get_by_uuid',
                       fakes.fake_instance_get(vm_state=vm_states.ACTIVE,
                                                host='fake_host'))
