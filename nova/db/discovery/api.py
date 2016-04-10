@@ -4216,7 +4216,8 @@ def block_device_mapping_update_or_create(context, values, legacy=True):
     else:
         # Either the device_name doesn't exist in the database yet, or no
         # device_name was provided. Both cases mean creating a new BDM.
-        result = models.BlockDeviceMapping(**values)
+        result = models.BlockDeviceMapping()
+        result.update(values)
         result.save(context.session)
 
     # NOTE(xqueralt): Prevent from having multiple swap devices for the
