@@ -50,6 +50,7 @@ db_opts = [
 CONF = cfg.CONF
 CONF.register_opts(db_opts)
 
+_BACKEND_MAPPING = {'sqlalchemy': 'nova.db.discovery.api'}
 _BACKEND_MAPPING = {'sqlalchemy': 'nova.db.sqlalchemy.api'}
 
 
