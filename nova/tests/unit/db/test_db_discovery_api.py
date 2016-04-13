@@ -928,6 +928,14 @@ class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
         result = db.instance_get_by_uuid(self.ctxt, inst['uuid'])
         self._assertEqualInstances(inst, result)
 
+    # Note(msimonin)
+    def test_instance_get_by_uuid_dict(self):
+        inst = self.create_instance_with_args()
+        result = db.instance_get_by_uuid(self.ctxt, inst['uuid'], columns_to_join=['extra'])
+        self.assertTrue(hasattr(result, '__dict__'))
+        self.assertTrue('extra' in result.__dict__)
+
+
     # def test_instance_get_by_uuid_join_empty(self):
     #     inst = self.create_instance_with_args()
     #     result = db.instance_get_by_uuid(self.ctxt, inst['uuid'],

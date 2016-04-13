@@ -72,6 +72,20 @@ from nova import safe_utils
 from nova.db.discovery.context import RomeContextManager
 from nova.db.discovery.context import RomeRequestContext
 
+# NOTE(msimonin):
+# in object/instance.py l 300 we have
+# if hasattr(db_inst, '__dict__'):
+#   have_extra = 'extra' in db_inst.__dict__ and db_inst['extra']
+#
+# without the following have_extra would have been False
+# so we add all the column to join  in the attribute dictionary without
+# changing the laziness of the object (to be confirmed with jpastor)
+def update_dict(obj, columns_to_join):
+    if columns_to_join is None:
+        return
+    for column in columns_to_join:
+            obj.__dict__.update({column: None})
+
 def to_list(x, default=None):
     if x is None:
         return default
@@ -1952,6 +1966,8 @@ def _instance_get_by_uuid(context, uuid, columns_to_join=None):
 
     if not result:
         raise exception.InstanceNotFound(instance_id=uuid)
+
+    update_dict(result, columns_to_join)
 
     return result
 
