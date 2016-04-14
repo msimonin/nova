@@ -724,7 +724,9 @@ def service_update(context, service_id, values):
         if values['report_count'] > service_ref.report_count:
             service_ref.last_seen_up = timeutils.utcnow()
     service_ref.update(values)
-
+    # NOTE(msimonin): add the following statement to persist to DB
+    # in sqlalchemy it is avoided with a proper use of transaction decorator
+    context.session.add(service_ref)
     return service_ref
 
 
@@ -839,7 +841,9 @@ def compute_node_update(context, compute_id, values):
     values['updated_at'] = timeutils.utcnow()
     convert_objects_related_datetimes(values)
     compute_ref.update(values)
-
+    # NOTE(msimonin): add the following statement to persist to DB
+    # in sqlalchemy it is avoided with a proper use of transaction decorator
+    context.session.add(compute_ref)
     return compute_ref
 
 
@@ -1400,7 +1404,8 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                            filter_by(host=None).\
                            filter_by(leased=False).\
                            order_by(asc(models.FixedIp.updated_at)).\
-                           first()
+                          first()
+
 
     if not fixed_ip_ref:
         raise exception.NoMoreFixedIps(net=network_id)
