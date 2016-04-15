@@ -2057,6 +2057,395 @@ class BaseInstanceTypeTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
         v.update(values)
         return db.flavor_create(self.ctxt, v, projects)
 
+class SecurityGroupRuleTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
+    def setUp(self):
+        super(SecurityGroupRuleTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+
+
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        super(SecurityGroupRuleTestCase, self).tearDown()
+        classes = [models.SecurityGroup, models.SecurityGroupIngressDefaultRule, models.SecurityGroupIngressRule,
+                   models.SecurityGroupInstanceAssociation, models.Instance, models.InstanceGroupMember,
+                   models.InstanceIdMapping, models.InstanceInfoCache, models.InstanceExtra,
+                   models.InstanceSystemMetadata, models.InstanceMetadata,models.QuotaUsage]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
+    def _get_base_values(self):
+        return {
+            'name': 'fake_sec_group',
+            'description': 'fake_sec_group_descr',
+            'user_id': 'fake',
+            'project_id': 'fake',
+            'instances': []
+            }
+
+    def _get_base_rule_values(self):
+        return {
+            'protocol': "tcp",
+            'from_port': 80,
+            'to_port': 8080,
+            'cidr': None,
+            'deleted': 0,
+            'deleted_at': None,
+            'grantee_group': None,
+            'updated_at': None
+            }
+
+    def _create_security_group(self, values):
+        v = self._get_base_values()
+        v.update(values)
+        return db.security_group_create(self.ctxt, v)
+
+    def _create_security_group_rule(self, values):
+        v = self._get_base_rule_values()
+        v.update(values)
+        return db.security_group_rule_create(self.ctxt, v)
+
+    def test_security_group_rule_create(self):
+        security_group_rule = self._create_security_group_rule({})
+        self.assertIsNotNone(security_group_rule['id'])
+        for key, value in self._get_base_rule_values().items():
+            self.assertEqual(value, security_group_rule[key])
+
+    def _test_security_group_rule_get_by_security_group(self, columns=None):
+        instance = db.instance_create(self.ctxt,
+                                      {'system_metadata': {'foo': 'bar'}})
+        security_group = self._create_security_group({
+                'instances': [instance]})
+        security_group_rule = self._create_security_group_rule(
+            {'parent_group': security_group, 'grantee_group': security_group})
+        security_group_rule1 = self._create_security_group_rule(
+            {'parent_group': security_group, 'grantee_group': security_group})
+        found_rules = db.security_group_rule_get_by_security_group(
+            self.ctxt, security_group['id'], columns_to_join=columns)
+        self.assertEqual(len(found_rules), 2)
+        rules_ids = [security_group_rule['id'], security_group_rule1['id']]
+        for rule in found_rules:
+            if columns is None:
+                self.assertIn('grantee_group', dict(rule))
+                self.assertIn('instances',
+                              dict(rule.grantee_group))
+                self.assertIn(
+                    'system_metadata',
+                    dict(rule.grantee_group.instances[0]))
+                self.assertIn(rule['id'], rules_ids)
+            else:
+                self.assertNotIn('grantee_group', dict(rule))
+
+    def test_security_group_rule_get_by_security_group(self):
+        self._test_security_group_rule_get_by_security_group()
+
+    def test_security_group_rule_get_by_security_group_no_joins(self):
+        self._test_security_group_rule_get_by_security_group(columns=[])
+
+    def test_security_group_rule_get_by_instance(self):
+        instance = db.instance_create(self.ctxt, {})
+        security_group = self._create_security_group({
+                'instances': [instance]})
+        security_group_rule = self._create_security_group_rule(
+            {'parent_group': security_group, 'grantee_group': security_group})
+        security_group_rule1 = self._create_security_group_rule(
+            {'parent_group': security_group, 'grantee_group': security_group})
+
+
+        security_group_rule_ids = [security_group_rule['id'],
+                                   security_group_rule1['id']]
+        found_rules = db.security_group_rule_get_by_instance(self.ctxt,
+                                                             instance['uuid'])
+        self.assertEqual(len(found_rules), 2)
+        for rule in found_rules:
+            self.assertIn('grantee_group', rule)
+            self.assertIn(rule['id'], security_group_rule_ids)
+
+    def test_security_group_rule_destroy(self):
+        self._create_security_group({'name': 'fake1'})
+        self._create_security_group({'name': 'fake2'})
+        security_group_rule1 = self._create_security_group_rule({})
+        security_group_rule2 = self._create_security_group_rule({})
+        db.security_group_rule_destroy(self.ctxt, security_group_rule1['id'])
+        self.assertRaises(exception.SecurityGroupNotFound,
+                          db.security_group_rule_get,
+                          self.ctxt, security_group_rule1['id'])
+        self._assertEqualObjects(db.security_group_rule_get(self.ctxt,
+                                        security_group_rule2['id']),
+                                 security_group_rule2, ['grantee_group'])
+
+    def test_security_group_rule_destroy_not_found_exception(self):
+        self.assertRaises(exception.SecurityGroupNotFound,
+                          db.security_group_rule_destroy, self.ctxt, 100500)
+
+    def test_security_group_rule_get(self):
+        security_group_rule1 = (
+                self._create_security_group_rule({}))
+        self._create_security_group_rule({})
+        real_security_group_rule = db.security_group_rule_get(self.ctxt,
+                                              security_group_rule1['id'])
+        self._assertEqualObjects(security_group_rule1,
+                                 real_security_group_rule, ['grantee_group'])
+
+    def test_security_group_rule_get_not_found_exception(self):
+        self.assertRaises(exception.SecurityGroupNotFound,
+                          db.security_group_rule_get, self.ctxt, 100500)
+
+    def test_security_group_rule_count_by_group(self):
+        sg1 = self._create_security_group({'name': 'fake1'})
+        sg2 = self._create_security_group({'name': 'fake2'})
+        rules_by_group = {sg1: [], sg2: []}
+        for group in rules_by_group:
+            rules = rules_by_group[group]
+            for i in range(0, 10):
+                rules.append(
+                    self._create_security_group_rule({'parent_group_id':
+                                                    group['id']}))
+        db.security_group_rule_destroy(self.ctxt,
+                                       rules_by_group[sg1][0]['id'])
+        counted_groups = [db.security_group_rule_count_by_group(self.ctxt,
+                                                                group['id'])
+                          for group in [sg1, sg2]]
+        expected = [9, 10]
+        self.assertEqual(counted_groups, expected)
+
+class SecurityGroupTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
+    def setUp(self):
+        super(SecurityGroupTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+
+    def _get_base_values(self):
+        return {
+            'name': 'fake_sec_group',
+            'description': 'fake_sec_group_descr',
+            'user_id': 'fake',
+            'project_id': 'fake',
+            'instances': []
+            }
+
+    def _create_security_group(self, values):
+        v = self._get_base_values()
+        v.update(values)
+        return db.security_group_create(self.ctxt, v)
+
+    def test_security_group_create(self):
+        security_group = self._create_security_group({})
+        self.assertIsNotNone(security_group['id'])
+        for key, value in self._get_base_values().items():
+            self.assertEqual(value, security_group[key])
+
+    def test_security_group_destroy(self):
+        security_group1 = self._create_security_group({})
+        security_group2 = \
+            self._create_security_group({'name': 'fake_sec_group2'})
+
+        db.security_group_destroy(self.ctxt, security_group1['id'])
+        self.assertRaises(exception.SecurityGroupNotFound,
+                          db.security_group_get,
+                          self.ctxt, security_group1['id'])
+        self._assertEqualObjects(db.security_group_get(
+                self.ctxt, security_group2['id'],
+                columns_to_join=['instances']), security_group2)
+
+    def test_security_group_get(self):
+        security_group1 = self._create_security_group({})
+        self._create_security_group({'name': 'fake_sec_group2'})
+        real_security_group = db.security_group_get(self.ctxt,
+                                              security_group1['id'],
+                                              columns_to_join=['instances'])
+        self._assertEqualObjects(security_group1,
+                                 real_security_group)
+
+    def test_security_group_get_with_instance_columns(self):
+        instance = db.instance_create(self.ctxt,
+                                      {'system_metadata': {'foo': 'bar'}})
+        secgroup = self._create_security_group({'instances': [instance]})
+        secgroup = db.security_group_get(
+            self.ctxt, secgroup['id'],
+            columns_to_join=['instances.system_metadata'])
+        inst = secgroup.instances[0]
+        self.assertIn('system_metadata', dict(inst).keys())
+
+    def test_security_group_get_no_instances(self):
+        instance = db.instance_create(self.ctxt, {})
+        sid = self._create_security_group({'instances': [instance]})['id']
+
+        security_group = db.security_group_get(self.ctxt, sid,
+                                               columns_to_join=['instances'])
+        self.assertIn('instances', security_group.__dict__)
+
+        security_group = db.security_group_get(self.ctxt, sid)
+        self.assertNotIn('instances', security_group.__dict__)
+
+    def test_security_group_get_not_found_exception(self):
+        self.assertRaises(exception.SecurityGroupNotFound,
+                          db.security_group_get, self.ctxt, 100500)
+
+    def test_security_group_get_by_name(self):
+        security_group1 = self._create_security_group({'name': 'fake1'})
+        security_group2 = self._create_security_group({'name': 'fake2'})
+
+        real_security_group1 = db.security_group_get_by_name(
+                                self.ctxt,
+                                security_group1['project_id'],
+                                security_group1['name'],
+                                columns_to_join=None)
+        real_security_group2 = db.security_group_get_by_name(
+                                self.ctxt,
+                                security_group2['project_id'],
+                                security_group2['name'],
+                                columns_to_join=None)
+        self._assertEqualObjects(security_group1, real_security_group1)
+        self._assertEqualObjects(security_group2, real_security_group2)
+
+    def test_security_group_get_by_project(self):
+        security_group1 = self._create_security_group(
+                {'name': 'fake1', 'project_id': 'fake_proj1'})
+        security_group2 = self._create_security_group(
+                {'name': 'fake2', 'project_id': 'fake_proj2'})
+
+        real1 = db.security_group_get_by_project(
+                               self.ctxt,
+                               security_group1['project_id'])
+        real2 = db.security_group_get_by_project(
+                               self.ctxt,
+                               security_group2['project_id'])
+
+        expected1, expected2 = [security_group1], [security_group2]
+        self._assertEqualListsOfObjects(expected1, real1,
+                                        ignored_keys=['instances'])
+        self._assertEqualListsOfObjects(expected2, real2,
+                                        ignored_keys=['instances'])
+
+    def test_security_group_get_by_instance(self):
+        instance = db.instance_create(self.ctxt, dict(host='foo'))
+        values = [
+            {'name': 'fake1', 'instances': [instance]},
+            {'name': 'fake2', 'instances': [instance]},
+            {'name': 'fake3', 'instances': []},
+        ]
+        security_groups = [self._create_security_group(vals)
+                           for vals in values]
+
+        real = db.security_group_get_by_instance(self.ctxt,
+                                                 instance['uuid'])
+        expected = security_groups[:2]
+        self._assertEqualListsOfObjects(expected, real,
+                                        ignored_keys=['instances'])
+
+    def test_security_group_get_all(self):
+        values = [
+            {'name': 'fake1', 'project_id': 'fake_proj1'},
+            {'name': 'fake2', 'project_id': 'fake_proj2'},
+        ]
+        security_groups = [self._create_security_group(vals)
+                           for vals in values]
+
+        real = db.security_group_get_all(self.ctxt)
+
+        self._assertEqualListsOfObjects(security_groups, real,
+                                        ignored_keys=['instances'])
+
+    def test_security_group_in_use(self):
+        instance = db.instance_create(self.ctxt, dict(host='foo'))
+        values = [
+            {'instances': [instance],
+             'name': 'fake_in_use'},
+            {'instances': []},
+        ]
+
+        security_groups = [self._create_security_group(vals)
+                           for vals in values]
+
+        real = []
+        for security_group in security_groups:
+            in_use = db.security_group_in_use(self.ctxt,
+                                              security_group['id'])
+            real.append(in_use)
+        expected = [True, False]
+
+        self.assertEqual(expected, real)
+
+    def test_security_group_ensure_default(self):
+        self.ctxt.project_id = 'fake'
+        self.ctxt.user_id = 'fake'
+        self.assertEqual(0, len(db.security_group_get_by_project(
+                                    self.ctxt,
+                                    self.ctxt.project_id)))
+
+        db.security_group_ensure_default(self.ctxt)
+
+        security_groups = db.security_group_get_by_project(
+                            self.ctxt,
+                            self.ctxt.project_id)
+
+        self.assertEqual(1, len(security_groups))
+        self.assertEqual("default", security_groups[0]["name"])
+
+        usage = db.quota_usage_get(self.ctxt,
+                                   self.ctxt.project_id,
+                                   'security_groups',
+                                   self.ctxt.user_id)
+        self.assertEqual(1, usage.in_use)
+
+    def test_security_group_ensure_default_until_refresh(self):
+        self.flags(until_refresh=2)
+        self.ctxt.project_id = 'fake'
+        self.ctxt.user_id = 'fake'
+        db.security_group_ensure_default(self.ctxt)
+        usage = db.quota_usage_get(self.ctxt,
+                                   self.ctxt.project_id,
+                                   'security_groups',
+                                   self.ctxt.user_id)
+        self.assertEqual(2, usage.until_refresh)
+
+    @mock.patch.object(db.sqlalchemy.api, '_security_group_get_by_names')
+    def test_security_group_ensure_default_called_concurrently(self, sg_mock):
+        # make sure NotFound is always raised here to trick Nova to insert the
+        # duplicate security group entry
+        sg_mock.side_effect = exception.NotFound
+
+        # create the first db entry
+        self.ctxt.project_id = 1
+        db.security_group_ensure_default(self.ctxt)
+        security_groups = db.security_group_get_by_project(
+                            self.ctxt,
+                            self.ctxt.project_id)
+        self.assertEqual(1, len(security_groups))
+
+        # create the second one and ensure the exception is handled properly
+        default_group = db.security_group_ensure_default(self.ctxt)
+        self.assertEqual('default', default_group.name)
+
+    def test_security_group_update(self):
+        security_group = self._create_security_group({})
+        new_values = {
+                    'name': 'sec_group1',
+                    'description': 'sec_group_descr1',
+                    'user_id': 'fake_user1',
+                    'project_id': 'fake_proj1',
+        }
+
+        updated_group = db.security_group_update(self.ctxt,
+                                    security_group['id'],
+                                    new_values,
+                                    columns_to_join=['rules.grantee_group'])
+        for key, value in new_values.items():
+            self.assertEqual(updated_group[key], value)
+        self.assertEqual(updated_group['rules'], [])
+
+    def test_security_group_update_to_duplicate(self):
+        self._create_security_group(
+                {'name': 'fake1', 'project_id': 'fake_proj1'})
+        security_group2 = self._create_security_group(
+                {'name': 'fake1', 'project_id': 'fake_proj2'})
+
+        self.assertRaises(exception.SecurityGroupExists,
+                          db.security_group_update,
+                          self.ctxt, security_group2['id'],
+                          {'project_id': 'fake_proj1'})
+
 class InstanceTypeTestCase(BaseInstanceTypeTestCase):
 
     def test_flavor_create(self):
@@ -2360,6 +2749,326 @@ class InstanceTypeTestCase(BaseInstanceTypeTestCase):
                 flavor['flavorid'], read_deleted='yes')
         self.assertEqual(flavor['id'], flavor_by_fid['id'])
 
+class NetworkTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
+
+    """Tests for db.api.network_* methods."""
+
+    def setUp(self):
+        super(NetworkTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        super(NetworkTestCase, self).tearDown()
+        classes = [models.Network, models.Instance, models.FixedIp, models.VirtualInterface]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
+    def _get_associated_fixed_ip(self, host, cidr, ip):
+        network = db.network_create_safe(self.ctxt,
+            {'project_id': 'project1', 'cidr': cidr})
+        self.assertFalse(db.network_in_use_on_host(self.ctxt, network.id,
+            host))
+        instance = db.instance_create(self.ctxt,
+            {'project_id': 'project1', 'host': host})
+        virtual_interface = db.virtual_interface_create(self.ctxt,
+            {'instance_uuid': instance.uuid, 'network_id': network.id,
+            'address': ip})
+        db.fixed_ip_create(self.ctxt, {'address': ip,
+            'network_id': network.id, 'allocated': True,
+            'virtual_interface_id': virtual_interface.id})
+        db.fixed_ip_associate(self.ctxt, ip, instance.uuid,
+            network.id, virtual_interface_id=virtual_interface['id'])
+        return network, instance
+
+    def test_network_get_associated_default_route(self):
+        network, instance = self._get_associated_fixed_ip('host.net',
+            '192.0.2.0/30', '192.0.2.1')
+        network2 = db.network_create_safe(self.ctxt,
+            {'project_id': 'project1', 'cidr': '192.0.3.0/30'})
+        ip = '192.0.3.1'
+        virtual_interface = db.virtual_interface_create(self.ctxt,
+            {'instance_uuid': instance.uuid, 'network_id': network2.id,
+            'address': ip})
+        db.fixed_ip_create(self.ctxt, {'address': ip,
+            'network_id': network2.id, 'allocated': True,
+            'virtual_interface_id': virtual_interface.id})
+        db.fixed_ip_associate(self.ctxt, ip, instance.uuid,
+            network2.id)
+        data = db.network_get_associated_fixed_ips(self.ctxt, network.id)
+        self.assertEqual(1, len(data))
+        self.assertTrue(data[0]['default_route'])
+        data = db.network_get_associated_fixed_ips(self.ctxt, network2.id)
+        self.assertEqual(1, len(data))
+        self.assertFalse(data[0]['default_route'])
+
+    def test_network_get_associated_fixed_ips(self):
+        network, instance = self._get_associated_fixed_ip('host.net',
+            '192.0.2.0/30', '192.0.2.1')
+        data = db.network_get_associated_fixed_ips(self.ctxt, network.id)
+        self.assertEqual(1, len(data))
+        self.assertEqual('192.0.2.1', data[0]['address'])
+        self.assertEqual('192.0.2.1', data[0]['vif_address'])
+        self.assertEqual(instance.uuid, data[0]['instance_uuid'])
+        self.assertTrue(data[0][fields.PciDeviceStatus.ALLOCATED])
+
+    def test_network_create_safe(self):
+        values = {'host': 'localhost', 'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+        self.assertEqual(36, len(network['uuid']))
+        db_network = db.network_get(self.ctxt, network['id'])
+        self._assertEqualObjects(network, db_network)
+
+    def test_network_create_with_duplicate_vlan(self):
+        values1 = {'host': 'localhost', 'project_id': 'project1', 'vlan': 1}
+        values2 = {'host': 'something', 'project_id': 'project1', 'vlan': 1}
+        db.network_create_safe(self.ctxt, values1)
+        self.assertRaises(exception.DuplicateVlan,
+                          db.network_create_safe, self.ctxt, values2)
+
+    def test_network_delete_safe(self):
+        values = {'host': 'localhost', 'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+        db.network_get(self.ctxt, network['id'])
+        values = {'network_id': network['id'], 'address': '192.168.1.5'}
+        address1 = db.fixed_ip_create(self.ctxt, values)['address']
+        values = {'network_id': network['id'],
+                  'address': '192.168.1.6',
+                  'allocated': True}
+        address2 = db.fixed_ip_create(self.ctxt, values)['address']
+        self.assertRaises(exception.NetworkInUse,
+                          db.network_delete_safe, self.ctxt, network['id'])
+        db.fixed_ip_update(self.ctxt, address2, {'allocated': False})
+        network = db.network_delete_safe(self.ctxt, network['id'])
+        self.assertRaises(exception.FixedIpNotFoundForAddress,
+                          db.fixed_ip_get_by_address, self.ctxt, address1)
+        ctxt = self.ctxt.elevated(read_deleted='yes')
+        fixed_ip = db.fixed_ip_get_by_address(ctxt, address1)
+        self.assertTrue(fixed_ip['deleted'])
+
+    def test_network_in_use_on_host(self):
+        values = {'host': 'foo', 'hostname': 'myname'}
+        instance = db.instance_create(self.ctxt, values)
+        values = {'address': '192.168.1.5', 'instance_uuid': instance['uuid']}
+        vif = db.virtual_interface_create(self.ctxt, values)
+        values = {'address': '192.168.1.6',
+                  'network_id': 1,
+                  'allocated': True,
+                  'instance_uuid': instance['uuid'],
+                  'virtual_interface_id': vif['id']}
+        db.fixed_ip_create(self.ctxt, values)
+        self.assertTrue(db.network_in_use_on_host(self.ctxt, 1, 'foo'))
+        self.assertFalse(db.network_in_use_on_host(self.ctxt, 1, 'bar'))
+
+    def test_network_update_nonexistent(self):
+        self.assertRaises(exception.NetworkNotFound,
+            db.network_update, self.ctxt, 123456, {})
+
+    def test_network_update_with_duplicate_vlan(self):
+        values1 = {'host': 'localhost', 'project_id': 'project1', 'vlan': 1}
+        values2 = {'host': 'something', 'project_id': 'project1', 'vlan': 2}
+        network_ref = db.network_create_safe(self.ctxt, values1)
+        db.network_create_safe(self.ctxt, values2)
+        self.assertRaises(exception.DuplicateVlan,
+                          db.network_update, self.ctxt,
+                          network_ref["id"], values2)
+
+    def test_network_update(self):
+        network = db.network_create_safe(self.ctxt, {'project_id': 'project1',
+            'vlan': 1, 'host': 'test.com'})
+        db.network_update(self.ctxt, network.id, {'vlan': 2})
+        network_new = db.network_get(self.ctxt, network.id)
+        self.assertEqual(2, network_new.vlan)
+
+    def test_network_set_host_nonexistent_network(self):
+        self.assertRaises(exception.NetworkNotFound, db.network_set_host,
+                          self.ctxt, 123456, 'nonexistent')
+
+    def test_network_set_host_already_set_correct(self):
+        values = {'host': 'example.com', 'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+        self.assertIsNone(db.network_set_host(self.ctxt, network.id,
+                          'example.com'))
+
+    def test_network_set_host_already_set_incorrect(self):
+        values = {'host': 'example.com', 'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+        self.assertIsNone(db.network_set_host(self.ctxt, network.id,
+                                              'new.example.com'))
+
+    def test_network_set_host_with_initially_no_host(self):
+        values = {'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+        db.network_set_host(self.ctxt, network.id, 'example.com')
+        self.assertEqual('example.com',
+            db.network_get(self.ctxt, network.id).host)
+
+    def test_network_set_host_succeeds_retry_on_deadlock(self):
+        values = {'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+
+        def fake_update(params):
+            if mock_update.call_count == 1:
+                raise db_exc.DBDeadlock()
+            else:
+                return 1
+
+        with mock.patch('sqlalchemy.orm.query.Query.update',
+                        side_effect=fake_update) as mock_update:
+            db.network_set_host(self.ctxt, network.id, 'example.com')
+            self.assertEqual(2, mock_update.call_count)
+
+    def test_network_set_host_succeeds_retry_on_no_rows_updated(self):
+        values = {'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+
+        def fake_update(params):
+            if mock_update.call_count == 1:
+                return 0
+            else:
+                return 1
+
+        with mock.patch('sqlalchemy.orm.query.Query.update',
+                        side_effect=fake_update) as mock_update:
+            db.network_set_host(self.ctxt, network.id, 'example.com')
+            self.assertEqual(2, mock_update.call_count)
+
+    def test_network_set_host_failed_with_retry_on_no_rows_updated(self):
+        values = {'project_id': 'project1'}
+        network = db.network_create_safe(self.ctxt, values)
+
+        with mock.patch('sqlalchemy.orm.query.Query.update',
+                        return_value=0) as mock_update:
+            self.assertRaises(exception.NetworkSetHostFailed,
+                              db.network_set_host, self.ctxt, network.id,
+                              'example.com')
+            # 5 retries + initial attempt
+            self.assertEqual(6, mock_update.call_count)
+
+    def test_network_get_all_by_host(self):
+        self.assertEqual([],
+            db.network_get_all_by_host(self.ctxt, 'example.com'))
+        host = 'h1.example.com'
+        # network with host set
+        net1 = db.network_create_safe(self.ctxt, {'host': host})
+        self._assertEqualListsOfObjects([net1],
+            db.network_get_all_by_host(self.ctxt, host))
+        # network with fixed ip with host set
+        net2 = db.network_create_safe(self.ctxt, {})
+        db.fixed_ip_create(self.ctxt, {'host': host, 'network_id': net2.id})
+        # db.network_get_all_by_host(self.ctxt, host)
+        # TODO(msimonin): the following fails because fixed_ips are nested
+        # self._assertEqualListsOfObjects([net1, net2],
+        #     db.network_get_all_by_host(self.ctxt, host))
+        ntxs = db.network_get_all_by_host(self.ctxt, host)
+        self.assertEquals(2, len(ntxs))
+        self.assertListEqual([net1["id"], net2["id"]], [ntxs[0]["id"], ntxs[1]["id"]])
+        # network with instance with host set
+        net3 = db.network_create_safe(self.ctxt, {})
+        instance = db.instance_create(self.ctxt, {'host': host})
+        db.fixed_ip_create(self.ctxt, {'network_id': net3.id,
+            'instance_uuid': instance.uuid})
+        #self._assertEqualListsOfObjects([net1, net2, net3],
+        #    db.network_get_all_by_host(self.ctxt, host))
+        ntxs = db.network_get_all_by_host(self.ctxt, host)
+        self.assertEquals(3, len(ntxs))
+        self.assertListEqual([net1["id"], net2["id"], net3["id"]], [ntxs[0]["id"], ntxs[1]["id"], ntxs[2]["id"]])
+
+    def test_network_get_by_cidr(self):
+        cidr = '192.0.2.0/30'
+        cidr_v6 = '2001:db8:1::/64'
+        network = db.network_create_safe(self.ctxt,
+            {'project_id': 'project1', 'cidr': cidr, 'cidr_v6': cidr_v6})
+        self._assertEqualObjects(network,
+            db.network_get_by_cidr(self.ctxt, cidr))
+        self._assertEqualObjects(network,
+            db.network_get_by_cidr(self.ctxt, cidr_v6))
+
+    def test_network_get_by_cidr_nonexistent(self):
+        self.assertRaises(exception.NetworkNotFoundForCidr,
+            db.network_get_by_cidr, self.ctxt, '192.0.2.0/30')
+
+    def test_network_get_by_uuid(self):
+        network = db.network_create_safe(self.ctxt,
+            {'project_id': 'project_1'})
+        self._assertEqualObjects(network,
+            db.network_get_by_uuid(self.ctxt, network.uuid))
+
+    def test_network_get_by_uuid_nonexistent(self):
+        self.assertRaises(exception.NetworkNotFoundForUUID,
+            db.network_get_by_uuid, self.ctxt, 'non-existent-uuid')
+
+    def test_network_get_all_by_uuids_no_networks(self):
+        self.assertRaises(exception.NoNetworksFound,
+            db.network_get_all_by_uuids, self.ctxt, ['non-existent-uuid'])
+
+    def test_network_get_all_by_uuids(self):
+        net1 = db.network_create_safe(self.ctxt, {})
+        net2 = db.network_create_safe(self.ctxt, {})
+        self._assertEqualListsOfObjects([net1, net2],
+            db.network_get_all_by_uuids(self.ctxt, [net1.uuid, net2.uuid]))
+
+    def test_network_get_all_no_networks(self):
+        self.assertRaises(exception.NoNetworksFound,
+            db.network_get_all, self.ctxt)
+
+    def test_network_get_all(self):
+        network = db.network_create_safe(self.ctxt, {})
+        network_db = db.network_get_all(self.ctxt)
+        self.assertEqual(1, len(network_db))
+        self._assertEqualObjects(network, network_db[0])
+
+    def test_network_get_all_admin_user(self):
+        network1 = db.network_create_safe(self.ctxt, {})
+        network2 = db.network_create_safe(self.ctxt,
+                                          {'project_id': 'project1'})
+        self._assertEqualListsOfObjects([network1, network2],
+                                        db.network_get_all(self.ctxt,
+                                                           project_only=True))
+
+    def test_network_get_all_normal_user(self):
+        normal_ctxt = context.RequestContext('fake', 'fake')
+        db.network_create_safe(self.ctxt, {})
+        db.network_create_safe(self.ctxt, {'project_id': 'project1'})
+        network1 = db.network_create_safe(self.ctxt,
+                                          {'project_id': 'fake'})
+        network_db = db.network_get_all(normal_ctxt, project_only=True)
+        self.assertEqual(1, len(network_db))
+        self._assertEqualObjects(network1, network_db[0])
+
+    def test_network_get(self):
+        network = db.network_create_safe(self.ctxt, {})
+        self._assertEqualObjects(db.network_get(self.ctxt, network.id),
+            network)
+        db.network_delete_safe(self.ctxt, network.id)
+        self.assertRaises(exception.NetworkNotFound,
+            db.network_get, self.ctxt, network.id)
+
+    def test_network_associate(self):
+        network = db.network_create_safe(self.ctxt, {})
+        self.assertIsNone(network.project_id)
+        db.network_associate(self.ctxt, "project1", network.id)
+        self.assertEqual("project1", db.network_get(self.ctxt,
+            network.id).project_id)
+
+    def test_network_diassociate(self):
+        network = db.network_create_safe(self.ctxt,
+            {'project_id': 'project1', 'host': 'test.net'})
+        # disassociate project
+        db.network_disassociate(self.ctxt, network.id, False, True)
+        self.assertIsNone(db.network_get(self.ctxt, network.id).project_id)
+        # disassociate host
+        db.network_disassociate(self.ctxt, network.id, True, False)
+        self.assertIsNone(db.network_get(self.ctxt, network.id).host)
+
+    def test_network_count_reserved_ips(self):
+        net = db.network_create_safe(self.ctxt, {})
+        self.assertEqual(0, db.network_count_reserved_ips(self.ctxt, net.id))
+        db.fixed_ip_create(self.ctxt, {'network_id': net.id,
+            'reserved': True})
+        self.assertEqual(1, db.network_count_reserved_ips(self.ctxt, net.id))
 
 class ComputeNodeTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
 
