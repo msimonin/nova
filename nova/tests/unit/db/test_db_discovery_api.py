@@ -4245,3 +4245,84 @@ class FixedIPTestCase(BaseInstanceTypeTestCase):
         fixed_ip_after_update = db.fixed_ip_get_by_address(self.ctxt,
                                                            param_2['address'])
         self._assertEqualObjects(param_2, fixed_ip_after_update, ignored_keys)
+
+class TestInstanceInfoCache(unittest.TestCase):
+    def setUp(self):
+        super(TestInstanceInfoCache, self).setUp()
+        user_id = 'fake'
+        project_id = 'fake'
+        self.context = context.get_admin_context()
+
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        super(TestInstanceInfoCache, self).tearDown()
+        classes = [models.Instance, models.InstanceInfoCache]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
+    def test_instance_info_cache_get(self):
+        instance = db.instance_create(self.context, {})
+        network_info = 'net'
+        db.instance_info_cache_update(self.context, instance.uuid,
+                                      {'network_info': network_info})
+        info_cache = db.instance_info_cache_get(self.context, instance.uuid)
+        self.assertEqual(network_info, info_cache.network_info)
+
+    def test_instance_info_cache_update(self):
+        instance = db.instance_create(self.context, {})
+
+        network_info1 = 'net1'
+        db.instance_info_cache_update(self.context, instance.uuid,
+                                      {'network_info': network_info1})
+        info_cache = db.instance_info_cache_get(self.context, instance.uuid)
+        self.assertEqual(network_info1, info_cache.network_info)
+
+        network_info2 = 'net2'
+        db.instance_info_cache_update(self.context, instance.uuid,
+                                      {'network_info': network_info2})
+        info_cache = db.instance_info_cache_get(self.context, instance.uuid)
+        self.assertEqual(network_info2, info_cache.network_info)
+
+    def test_instance_info_cache_delete(self):
+        instance = db.instance_create(self.context, {})
+        network_info = 'net'
+        db.instance_info_cache_update(self.context, instance.uuid,
+                                      {'network_info': network_info})
+        info_cache = db.instance_info_cache_get(self.context, instance.uuid)
+        self.assertEqual(network_info, info_cache.network_info)
+        db.instance_info_cache_delete(self.context, instance.uuid)
+        info_cache = db.instance_info_cache_get(self.context, instance.uuid)
+        self.assertIsNone(info_cache)
+
+    def test_instance_info_cache_update_duplicate(self):
+        instance1 = db.instance_create(self.context, {})
+        instance2 = db.instance_create(self.context, {})
+
+        network_info1 = 'net1'
+        db.instance_info_cache_update(self.context, instance1.uuid,
+                                      {'network_info': network_info1})
+        network_info2 = 'net2'
+        db.instance_info_cache_update(self.context, instance2.uuid,
+                                      {'network_info': network_info2})
+
+        # updating of instance_uuid causes unique constraint failure,
+        # using of savepoint helps to continue working with existing session
+        # after DB errors, so exception was successfully handled
+        db.instance_info_cache_update(self.context, instance2.uuid,
+                                      {'instance_uuid': instance1.uuid})
+
+        info_cache1 = db.instance_info_cache_get(self.context, instance1.uuid)
+        self.assertEqual(network_info1, info_cache1.network_info)
+        info_cache2 = db.instance_info_cache_get(self.context, instance2.uuid)
+        self.assertEqual(network_info2, info_cache2.network_info)
+
+    def test_instance_info_cache_create_using_update(self):
+        network_info = 'net'
+        instance_uuid = uuidutils.generate_uuid()
+        db.instance_info_cache_update(self.context, instance_uuid,
+                                      {'network_info': network_info})
+        info_cache = db.instance_info_cache_get(self.context, instance_uuid)
+        self.assertEqual(network_info, info_cache.network_info)
+        self.assertEqual(instance_uuid, info_cache.instance_uuid)

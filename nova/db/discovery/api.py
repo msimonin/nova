@@ -2975,6 +2975,9 @@ def instance_info_cache_update(context, instance_uuid, values):
             info_cache.save(context.session)
         else:
             info_cache.update(values)
+            # NOTE(msimonin): add the following statement to persist to DB
+            # in sqlalchemy it is avoided with a proper use of transaction decorator
+            context.session.add(info_cache)
     except db_exc.DBDuplicateEntry:
         # NOTE(sirp): Possible race if two greenthreads attempt to
         # recreate the instance cache entry at the same time. First one
