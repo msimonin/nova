@@ -72,6 +72,20 @@ from nova import safe_utils
 from nova.db.discovery.context import RomeContextManager
 from nova.db.discovery.context import RomeRequestContext
 
+# NOTE(msimonin):
+# in object/instance.py l 300 we have
+# if hasattr(db_inst, '__dict__'):
+#   have_extra = 'extra' in db_inst.__dict__ and db_inst['extra']
+#
+# without the following have_extra would have been False
+# so we add all the column to join  in the attribute dictionary without
+# changing the laziness of the object (to be confirmed with jpastor)
+def update_dict(obj, columns_to_join):
+    if columns_to_join is None:
+        return
+    for column in columns_to_join:
+            obj.__dict__.update({column: None})
+
 def to_list(x, default=None):
     if x is None:
         return default
@@ -710,7 +724,9 @@ def service_update(context, service_id, values):
         if values['report_count'] > service_ref.report_count:
             service_ref.last_seen_up = timeutils.utcnow()
     service_ref.update(values)
-
+    # NOTE(msimonin): add the following statement to persist to DB
+    # in sqlalchemy it is avoided with a proper use of transaction decorator
+    context.session.add(service_ref)
     return service_ref
 
 
@@ -825,7 +841,9 @@ def compute_node_update(context, compute_id, values):
     values['updated_at'] = timeutils.utcnow()
     convert_objects_related_datetimes(values)
     compute_ref.update(values)
-
+    # NOTE(msimonin): add the following statement to persist to DB
+    # in sqlalchemy it is avoided with a proper use of transaction decorator
+    context.session.add(compute_ref)
     return compute_ref
 
 
@@ -1386,7 +1404,8 @@ def fixed_ip_associate_pool(context, network_id, instance_uuid=None,
                            filter_by(host=None).\
                            filter_by(leased=False).\
                            order_by(asc(models.FixedIp.updated_at)).\
-                           first()
+                          first()
+
 
     if not fixed_ip_ref:
         raise exception.NoMoreFixedIps(net=network_id)
@@ -1581,13 +1600,14 @@ def fixed_ip_get_by_instance(context, instance_uuid):
                  options(joinedload('network')).\
                  options(joinedload('floating_ips')).\
                  order_by(asc(models.VirtualInterface.created_at),
-                          asc(models.VirtualInterface.id)).\
+                           asc(models.VirtualInterface.id)).\
                  all()
 
     if not result:
         raise exception.FixedIpNotFoundForInstance(instance_uuid=instance_uuid)
 
-    return result
+    # TODO(Jonathan): quick fix
+    return [x[0] for x in result]
 
 
 @wrapp_with_session
@@ -1952,6 +1972,8 @@ def _instance_get_by_uuid(context, uuid, columns_to_join=None):
 
     if not result:
         raise exception.InstanceNotFound(instance_id=uuid)
+
+    update_dict(result, columns_to_join)
 
     return result
 
@@ -2953,6 +2975,9 @@ def instance_info_cache_update(context, instance_uuid, values):
             info_cache.save(context.session)
         else:
             info_cache.update(values)
+            # NOTE(msimonin): add the following statement to persist to DB
+            # in sqlalchemy it is avoided with a proper use of transaction decorator
+            context.session.add(info_cache)
     except db_exc.DBDuplicateEntry:
         # NOTE(sirp): Possible race if two greenthreads attempt to
         # recreate the instance cache entry at the same time. First one
@@ -3224,54 +3249,88 @@ def network_get_all_by_uuids(context, network_uuids, project_only):
     return result
 
 
-def _get_associated_fixed_ips_query(context, network_id, host=None):
-    # NOTE(vish): The ugly joins here are to solve a performance issue and
-    #             should be removed once we can add and remove leases
-    #             without regenerating the whole list
-    vif_and = and_(models.VirtualInterface.id ==
-                   models.FixedIp.virtual_interface_id,
-                   models.VirtualInterface.deleted == 0)
+# def _get_associated_fixed_ips_query(context, network_id, host=None):
+#     # NOTE(vish): The ugly joins here are to solve a performance issue and
+#     #             should be removed once we can add and remove leases
+#     #             without regenerating the whole list
+#     vif_and = and_(models.VirtualInterface.id ==
+#                    models.FixedIp.virtual_interface_id,
+#                    models.VirtualInterface.deleted == 0)
+#     inst_and = and_(models.Instance.uuid == models.FixedIp.instance_uuid,
+#                     models.Instance.deleted == 0)
+#     # NOTE(vish): This subquery left joins the minimum interface id for each
+#     #             instance. If the join succeeds (i.e. the 11th column is not
+#     #             null), then the fixed ip is on the first interface.
+#     subq = context.session.query(
+#         func.min(models.VirtualInterface.id).label("id"),
+#         models.VirtualInterface.instance_uuid).\
+#         group_by(models.VirtualInterface.instance_uuid).subquery()
+#     subq_and = and_(subq.c.id == models.FixedIp.virtual_interface_id,
+#             subq.c.instance_uuid == models.VirtualInterface.instance_uuid)
+#     query = context.session.query(
+#         models.FixedIp.address,
+#         models.FixedIp.instance_uuid,
+#         models.FixedIp.network_id,
+#         models.FixedIp.virtual_interface_id,
+#         models.VirtualInterface.address,
+#         models.Instance.hostname,
+#         models.Instance.updated_at,
+#         models.Instance.created_at,
+#         models.FixedIp.allocated,
+#         models.FixedIp.leased,
+#         subq.c.id).\
+#         filter(models.FixedIp.deleted == 0).\
+#         filter(models.FixedIp.network_id == network_id).\
+#         join((models.VirtualInterface, vif_and)).\
+#         join((models.Instance, inst_and)).\
+#         outerjoin((subq, subq_and)).\
+#         filter(models.FixedIp.instance_uuid != null()).\
+#         filter(models.FixedIp.virtual_interface_id != null())
+#     if host:
+#         query = query.filter(models.Instance.host == host)
+#     return query
+
+def  _get_associated_fixed_ips_datas(context, network_id, host=None):
+    # NOTE(msimonin) We definetely need to find a better way to do this
+    # get all the fixed ip joined with the instance
+
     inst_and = and_(models.Instance.uuid == models.FixedIp.instance_uuid,
-                    models.Instance.deleted == 0)
-    # NOTE(vish): This subquery left joins the minimum interface id for each
-    #             instance. If the join succeeds (i.e. the 11th column is not
-    #             null), then the fixed ip is on the first interface.
-    subq = context.session.query(
-        func.min(models.VirtualInterface.id).label("id"),
-        models.VirtualInterface.instance_uuid).\
-        group_by(models.VirtualInterface.instance_uuid).subquery()
-    subq_and = and_(subq.c.id == models.FixedIp.virtual_interface_id,
-            subq.c.instance_uuid == models.VirtualInterface.instance_uuid)
+                     models.Instance.deleted == 0)
+
     query = context.session.query(
-        models.FixedIp.address,
-        models.FixedIp.instance_uuid,
-        models.FixedIp.network_id,
-        models.FixedIp.virtual_interface_id,
-        models.VirtualInterface.address,
-        models.Instance.hostname,
-        models.Instance.updated_at,
-        models.Instance.created_at,
-        models.FixedIp.allocated,
-        models.FixedIp.leased,
-        subq.c.id).\
-        filter(models.FixedIp.deleted == 0).\
-        filter(models.FixedIp.network_id == network_id).\
-        join((models.VirtualInterface, vif_and)).\
-        join((models.Instance, inst_and)).\
-        outerjoin((subq, subq_and)).\
-        filter(models.FixedIp.instance_uuid != null()).\
-        filter(models.FixedIp.virtual_interface_id != null())
+            models.FixedIp.address,
+            models.FixedIp.instance_uuid,
+            models.FixedIp.network_id,
+            models.FixedIp.virtual_interface_id,
+            models.Instance.hostname,
+            models.Instance.updated_at,
+            models.Instance.created_at,
+            models.FixedIp.allocated,
+            models.FixedIp.leased).\
+    join((models.Instance, inst_and)).\
+    filter(models.FixedIp.instance_uuid != null()).\
+    filter(models.FixedIp.virtual_interface_id != null())
+
     if host:
         query = query.filter(models.Instance.host == host)
-    return query
+
+    result = query.all()
+    # we fake the join with VirtualInterface
+    for r in result:
+        # vif_address
+        r.insert(4, r[0])
+        # default route
+        r.insert(10, True)
+    return result
 
 
 @wrapp_with_session
 def network_get_associated_fixed_ips(context, network_id, host=None):
     # FIXME(sirp): since this returns fixed_ips, this would be better named
     # fixed_ip_get_all_by_network.
-    query = _get_associated_fixed_ips_query(context, network_id, host)
-    result = query.all()
+    #query = _get_associated_fixed_ips_query(context, network_id, host)
+    #result = query.all()
+    result = _get_associated_fixed_ips_datas(context, network_id, host)
     data = []
     for datum in result:
         cleaned = {}
@@ -3294,8 +3353,9 @@ def network_get_associated_fixed_ips(context, network_id, host=None):
 
 @wrapp_with_session
 def network_in_use_on_host(context, network_id, host):
-    query = _get_associated_fixed_ips_query(context, network_id, host)
-    return query.count() > 0
+    #query = _get_associated_fixed_ips_query(context, network_id, host)
+    datas = _get_associated_fixed_ips_datas(context, network_id, host)
+    return len(datas) > 0
 
 
 def _network_get_query(context):
@@ -3327,21 +3387,75 @@ def network_get_by_cidr(context, cidr):
 
 @wrapp_with_session
 def network_get_all_by_host(context, host):
-    fixed_host_filter = or_(models.FixedIp.host == host,
-            and_(models.FixedIp.instance_uuid != null(),
-                 models.Instance.host == host))
-    fixed_ip_query = model_query(context, models.FixedIp,
-                                 (models.FixedIp.network_id,)).\
-                     outerjoin((models.Instance,
-                                models.Instance.uuid ==
-                                models.FixedIp.instance_uuid)).\
-                     filter(fixed_host_filter)
-    # NOTE(vish): return networks that have host set
-    #             or that have a fixed ip with host set
-    #             or that have an instance with host set
-    host_filter = or_(models.Network.host == host,
-                      models.Network.id.in_(fixed_ip_query.subquery()))
-    return _network_get_query(context).filter(host_filter).all()
+
+    # network1 : network with host set
+    network_ids1 = model_query(context, models.Network, models.Network.id).filter(models.Network.host==host).all()
+    # returns a list de tuple (list) network, networkid
+
+    result = []
+    track_network = []
+    for network_id in network_ids1:
+        result.append(network_id[0])
+        track_network.append(network_id[1])
+
+    # network2 : network corresponding to fixed ips that have host set
+    network_ids2 = model_query(context, models.Network, models.Network.id).join(models.FixedIp).\
+        filter(models.Network.id==models.FixedIp.network_id).\
+        filter(models.FixedIp.host==host).\
+        all()
+
+    # network3 : network corresponding to instance with an fixed ip t
+    network_ids3 = model_query(context, models.Network, models.Network.id).join(models.FixedIp).join(models.Instance).\
+        filter(models.Network.id==models.FixedIp.network_id).\
+        filter(models.Instance.uuid==models.FixedIp.instance_uuid).\
+        filter(models.Instance.host==host).\
+        all()
+
+    for network_id in network_ids2 + network_ids3:
+        try:
+            if not network_id[2]["id"] in track_network:
+                result.append(network_id[2])
+                track_network.append(network_id[2]["id"])
+        except:
+            pass
+
+    return result
+    # network_ids1 = model_query(context, models.Network, models.Network.id).filter(models.Network.host==host).all()
+    # network_ids2 = model_query(context, models.Network, models.Network.id).join(models.FixedIp)\
+    #     .filter(models.Network.id==models.FixedIp.network_id)\
+    #     .filter(models.FixedIp.host==host)\
+    #     .all()
+    # network_ids3 = model_query(context, models.Network, models.Network.id).join(models.FixedIp).join(models.Instance)\
+    #     .filter(models.Network.id==models.FixedIp.network_id)\
+    #     .filter(models.Instance.uuid==models.FixedIp.instance_uuid)\
+    #     .filter(models.Instance.host==host)\
+    #     .all()
+    #
+    # processed_pairs = []
+    # result = []
+    # for pair in network_ids1 + network_ids2 + network_ids3:
+    #     if pair[1] not in processed_pairs:
+    #         processed_pairs += [pair[1]]
+    #         result += [pair[0]]
+    # return result
+
+
+    # fixed_host_filter = or_(models.FixedIp.host == host,
+    #     and_(models.FixedIp.instance_uuid != null(),
+    #          models.Instance.host == host))
+    # fixed_ip_query = model_query(context, models.FixedIp,
+    #                              (models.FixedIp.network_id,)).\
+    #                  outerjoin((models.Instance,
+    #                             models.Instance.uuid ==
+    #                             models.FixedIp.instance_uuid)).\
+    #                  filter(fixed_host_filter)
+    # # NOTE(vish): return networks that have host set
+    # #             or that have a fixed ip with host set
+    # #             or that have an instance with host set
+    # host_filter = or_(models.Network.host == host,
+    #                   models.Network.id.in_(fixed_ip_query.subquery()))
+    # result = _network_get_query(context).filter(host_filter).all()
+    # return result
 
 
 @oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True,
@@ -4314,11 +4428,19 @@ def security_group_create(context, values):
         # TODO(jonathan): "wrapp_with_session.savepoint.using" => ""
         # with wrapp_with_session.savepoint.using(context):
         security_group_ref.save()
+
         for instance in security_group_ref.instances:
             member = models.InstanceGroupMember()
             member.instance_id = instance.id
             member.group_id = security_group_ref.id
             member.save()
+            # NOTE(disco/msimonin): for the association
+            # TODO(disco/*) we need to fix this
+            association = models.SecurityGroupInstanceAssociation()
+            association.instance_uuid = instance.id
+            association.security_group_id = security_group_ref.id
+            association.save()
+
     except db_exc.DBDuplicateEntry:
         raise exception.SecurityGroupExists(
                 project_id=values['project_id'],
@@ -4597,11 +4719,15 @@ def security_group_rule_get_by_security_group(context, security_group_id,
 @require_context
 @wrapp_with_session
 def security_group_rule_get_by_instance(context, instance_uuid):
-    return (_security_group_rule_get_query(context).
-            join('parent_group', 'instances').
-            filter_by(uuid=instance_uuid).
-            options(joinedload('grantee_group')).
-            all())
+    #NOTE(disco/msimonin): we need to fix the join here
+    security_groups = model_query(context, models.SecurityGroupInstanceAssociation).filter_by(instance_uid=instance_uuid).all()
+    print(security_groups)
+
+    rules = model_query(context, models.SecurityGroupIngressRule).\
+        filter(models.SecurityGroupIngressRule.parent_group_id.in_(map(lambda x: x['security_group_id'], security_groups)))\
+        .all()
+    return rules
+
 
 
 @require_context
