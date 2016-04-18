@@ -1776,7 +1776,7 @@ class InstanceMetadataTestCase(test.TestCase):
         self.assertEqual(metadata, {'new_key': 'new_value'})
 
 
-class BaseInstanceTypeTestCase(test.TestCase, ModelsObjectComparatorMixin):
+class BaseInstanceTypeTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
     def setUp(self):
         super(BaseInstanceTypeTestCase, self).setUp()
         self.ctxt = context.get_admin_context()

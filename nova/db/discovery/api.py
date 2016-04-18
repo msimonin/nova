@@ -5027,11 +5027,15 @@ def _flavor_get_query(context, read_deleted=None):
                        read_deleted=read_deleted).\
                        options(joinedload('extra_specs'))
     if not context.is_admin:
-        the_filter = [models.InstanceTypes.is_public == true()]
-        the_filter.extend([
-            models.InstanceTypes.projects.any(project_id=context.project_id)
-        ])
-        query = query.filter(or_(*the_filter))
+        #TODO(jonathan): commented and simplified the following code
+        # the_filter = [models.InstanceTypes.is_public == true()]
+        # the_filter.extend([
+        #     models.InstanceTypes.projects.any(project_id=context.project_id)
+        # ])
+        # query = query.filter(or_(*the_filter))
+        instance_types_associated_to_this_project = model_query(context, models.InstanceTypeProjects.instance_type_id).filter(models.InstanceTypeProjects.project_id==context.project_id).all()
+        instance_types_ids_associated_to_this_project = map(lambda x: x.id, instance_types_associated_to_this_project)
+        query = query.filter(and_(models.InstanceTypes.is_public==true(), models.InstanceTypes.id.in_(instance_types_ids_associated_to_this_project)))
     return query
 
 
