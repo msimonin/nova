@@ -5196,7 +5196,7 @@ def flavor_get_all(context, inactive=False, filters=None,
 
     if 'is_public' in filters and filters['is_public'] is not None:
         #TODO(jonathan): commented and simplified the following code
-        # the_filter = [models.InstanceTypes.is_public == filters['is_public']]
+        the_filter = [models.InstanceTypes.is_public == filters['is_public']]
         if filters['is_public'] and context.project_id is not None:
             # the_filter.extend([
             #     models.InstanceTypes.projects.any(
