@@ -5195,12 +5195,17 @@ def flavor_get_all(context, inactive=False, filters=None,
                 models.InstanceTypes.disabled == filters['disabled'])
 
     if 'is_public' in filters and filters['is_public'] is not None:
-        the_filter = [models.InstanceTypes.is_public == filters['is_public']]
+        #TODO(jonathan): commented and simplified the following code
+        # the_filter = [models.InstanceTypes.is_public == filters['is_public']]
         if filters['is_public'] and context.project_id is not None:
-            the_filter.extend([
-                models.InstanceTypes.projects.any(
-                    project_id=context.project_id, deleted=0)
-            ])
+            # the_filter.extend([
+            #     models.InstanceTypes.projects.any(
+            #         project_id=context.project_id, deleted=0)
+            # ])
+            instance_types_associated_to_this_project = model_query(context, models.InstanceTypeProjects.instance_type_id).filter(models.InstanceTypeProjects.project_id==context.project_id).all()
+            instance_types_ids_associated_to_this_project = map(lambda x: x.id, instance_types_associated_to_this_project)
+            query = query.filter(and_(models.InstanceTypes.is_public==true(), models.InstanceTypes.id.in_(instance_types_ids_associated_to_this_project)))
+
         if len(the_filter) > 1:
             query = query.filter(or_(*the_filter))
         else:
