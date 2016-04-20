@@ -5200,17 +5200,22 @@ def flavor_get_all(context, inactive=False, filters=None,
         query = query.filter(
                 models.InstanceTypes.disabled == filters['disabled'])
 
-    if 'is_public' in filters and filters['is_public'] is not None:
-        the_filter = [models.InstanceTypes.is_public == filters['is_public']]
-        if filters['is_public'] and context.project_id is not None:
-            the_filter.extend([
-                models.InstanceTypes.projects.any(
-                    project_id=context.project_id, deleted=0)
-            ])
-        if len(the_filter) > 1:
-            query = query.filter(or_(*the_filter))
-        else:
-            query = query.filter(the_filter[0])
+    # if 'is_public' in filters and filters['is_public'] is not None:
+        #TODO(jonathan): commented and simplified the following code
+        # the_filter = [models.InstanceTypes.is_public == filters['is_public']]
+        # if filters['is_public'] and context.project_id is not None:
+            # the_filter.extend([
+            #     models.InstanceTypes.projects.any(
+            #         project_id=context.project_id, deleted=0)
+            # ])
+            # instance_types_associated_to_this_project = model_query(context, models.InstanceTypeProjects.instance_type_id).filter(models.InstanceTypeProjects.project_id==context.project_id).all()
+            # instance_types_ids_associated_to_this_project = map(lambda x: x.id, instance_types_associated_to_this_project)
+            # query = query.filter(models.InstanceTypes.id.in_(instance_types_ids_associated_to_this_project))
+
+        # if len(the_filter) > 1:
+        #     query = query.filter(or_(*the_filter))
+        # else:
+        #     query = query.filter(the_filter[0])
 
     marker_row = None
     if marker is not None:
