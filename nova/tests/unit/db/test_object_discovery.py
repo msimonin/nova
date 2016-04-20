@@ -8,16 +8,30 @@ from nova import db
 from nova import objects
 objects.register_all()
 
-class FixedIpTestCase(unittest.TestCase):
+class CommonMixin:
+    def _create_instance(self, **kwargs):
+        instance = db.instance_create(self.ctxt, kwargs)
+        return instance['uuid']
+
+class InstanceTestCase(unittest.TestCase, CommonMixin):
+    def setUp(self):
+        super(InstanceTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+
+    def test_get_by_uuid(self):
+        instance = db.instance_create(self.ctxt, {})
+        sec_group = db.security_group_create(self.ctxt, {
+            'instances': [instance]
+        })
+        # fails with AttributeError: 'SecurityGroupInstanceAssociation' object has no attribute 'user_id'
+        # instead of loading the security groups of an instance it loads the SecurityGroupInstanceAssociation
+        objects.Instance.get_by_uuid(self.ctxt, instance['uuid'], expected_attrs = ["security_groups"])
+
+class FixedIpTestCase(unittest.TestCase, CommonMixin):
 
     def setUp(self):
         super(FixedIpTestCase, self).setUp()
         self.ctxt = context.get_admin_context()
-
-
-    def _create_instance(self, **kwargs):
-        instance = db.instance_create(self.ctxt, kwargs)
-        return instance['uuid']
 
     def create_fixed_ip(self, **params):
         default_params = {'address': '192.168.0.1', 'virtual_interface_id':1}

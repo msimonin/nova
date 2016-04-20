@@ -4442,7 +4442,7 @@ def security_group_create(context, values):
             # NOTE(disco/msimonin): for the association
             # TODO(disco/*) we need to fix this
             association = models.SecurityGroupInstanceAssociation()
-            association.instance_uuid = instance.id
+            association.instance_uuid = instance.uuid
             association.security_group_id = security_group_ref.id
             association.save()
 
