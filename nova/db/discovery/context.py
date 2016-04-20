@@ -19,7 +19,7 @@ class RomeTransactionContext():
         pass
 
 class RomeRequestContext(object):
-    def __init__(self,user_id=None, project_id=None,
+    def __init__(self, user_id=None, project_id=None,
                  is_admin=None, read_deleted="no",
                  roles=None, remote_address=None, timestamp=None,
                  request_id=None, auth_token=None, overwrite=True,

@@ -567,7 +567,7 @@ class ModelsObjectComparatorMixin(object):
             self.assertIn(primitive, primitives1)
 
 
-class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
+class InstanceTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
 
     """Tests for db.api.instance_* methods."""
 
@@ -588,7 +588,7 @@ class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
     def tearDown(self):
         "Hook method for deconstructing the test fixture after testing it."
         super(InstanceTestCase, self).tearDown()
-        classes = [models.InstanceGroupMember, models.Instance, models.InstanceSystemMetadata, models.InstanceMetadata, models.InstanceFault]
+        classes = [models.InstanceGroupMember, models.FloatingIp, models.FixedIp, models.Instance, models.InstanceSystemMetadata, models.InstanceMetadata, models.InstanceFault]
         for c in classes:
             for o in Query(c).all():
                 o.delete()
@@ -1736,7 +1736,7 @@ class InstanceTestCase(test.TestCase, ModelsObjectComparatorMixin):
             self.ctxt, instance['uuid']))
 
 
-class InstanceMetadataTestCase(test.TestCase):
+class InstanceMetadataTestCase(unittest.TestCase):
 
     """Tests for db.api.instance_metadata_* methods."""
 
@@ -2223,6 +2223,16 @@ class SecurityGroupTestCase(unittest.TestCase, ModelsObjectComparatorMixin):
             'project_id': 'fake',
             'instances': []
             }
+
+    def tearDown(self):
+        "Hook method for deconstructing the test fixture after testing it."
+        # super(SecurityGroupRuleTestCase, self).tearDown()
+        classes = [models.SecurityGroup]
+        for c in classes:
+            for o in Query(c).all():
+                o.delete()
+        pass
+
 
     def _create_security_group(self, values):
         v = self._get_base_values()

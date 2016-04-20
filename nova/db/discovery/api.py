@@ -472,7 +472,6 @@ def model_query(context, model,
         raise ValueError(_("Unrecognized read_deleted value '%s'")
                            % read_deleted)
     rows = query.all()
-    print(rows)
 
     # We can't use oslo.db model_query's project_id here, as it doesn't allow
     # us to return both our projects and unowned projects.
@@ -2671,8 +2670,8 @@ def instance_floating_address_get_all(context, instance_uuid):
                                (models.FloatingIp.address,)).\
         join(models.FixedIp, models.FloatingIp.fixed_ip_id==models.FixedIp.id).\
         filter(models.FixedIp.instance_uuid==instance_uuid).all()
-    floating_ips = map(lambda x: x[1], floating_ips_joined_with_fixed_ips)
-    floating_addresses = [str(floating_ip.address) for floating_ip in floating_ips]
+    floating_addresses = map(lambda x: x[1], floating_ips_joined_with_fixed_ips)
+    # floating_addresses = [str(floating_ip.address) for floating_ip in floating_ips]
     floating_addresses = sorted(floating_addresses)
     return floating_addresses
 
@@ -4537,10 +4536,10 @@ def security_group_get_by_project(context, project_id):
 @require_context
 @wrapp_with_session
 def security_group_get_by_instance(context, instance_uuid):
-    return _security_group_get_query(context, read_deleted="no").\
-                   join(models.SecurityGroup.instances).\
-                   filter_by(uuid=instance_uuid).\
-                   all()
+    return _security_group_get_query(context, read_deleted="no")\
+        .join(models.SecurityGroupInstanceAssociation, models.SecurityGroupInstanceAssociation.security_group_id==models.SecurityGroup.id)\
+        .filter(models.SecurityGroupInstanceAssociation.instance_uuid==instance_uuid)\
+        .all()
 
 
 @require_context
@@ -5194,22 +5193,22 @@ def flavor_get_all(context, inactive=False, filters=None,
         query = query.filter(
                 models.InstanceTypes.disabled == filters['disabled'])
 
-    # if 'is_public' in filters and filters['is_public'] is not None:
+    if 'is_public' in filters and filters['is_public'] is not None:
         #TODO(jonathan): commented and simplified the following code
-        # the_filter = [models.InstanceTypes.is_public == filters['is_public']]
-        # if filters['is_public'] and context.project_id is not None:
+        the_filter = [models.InstanceTypes.is_public == filters['is_public']]
+        if filters['is_public'] and context.project_id is not None:
             # the_filter.extend([
             #     models.InstanceTypes.projects.any(
             #         project_id=context.project_id, deleted=0)
             # ])
-            # instance_types_associated_to_this_project = model_query(context, models.InstanceTypeProjects.instance_type_id).filter(models.InstanceTypeProjects.project_id==context.project_id).all()
-            # instance_types_ids_associated_to_this_project = map(lambda x: x.id, instance_types_associated_to_this_project)
-            # query = query.filter(models.InstanceTypes.id.in_(instance_types_ids_associated_to_this_project))
+            instance_types_associated_to_this_project = model_query(context, models.InstanceTypeProjects.instance_type_id).filter(models.InstanceTypeProjects.project_id==context.project_id).all()
+            instance_types_ids_associated_to_this_project = map(lambda x: x.id, instance_types_associated_to_this_project)
+            query = query.filter(models.InstanceTypes.id.in_(instance_types_ids_associated_to_this_project))
 
-        # if len(the_filter) > 1:
-        #     query = query.filter(or_(*the_filter))
-        # else:
-        #     query = query.filter(the_filter[0])
+        if len(the_filter) > 1:
+            query = query.filter(or_(*the_filter))
+        else:
+            query = query.filter(the_filter[0])
 
     marker_row = None
     if marker is not None:
