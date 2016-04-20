@@ -972,9 +972,13 @@ def floating_ip_get(context, id):
 @wrapp_with_session
 def floating_ip_get_pools(context):
     pools = []
-    for result in model_query(context, models.FloatingIp,
-                              (models.FloatingIp.pool,)).distinct():
-        pools.append({'name': result[0]})
+    # for result in model_query(context, models.FloatingIp,
+    #                           (models.FloatingIp.pool,)).distinct():
+    #     pools.append({'name': result[0]})
+    # NOTE(msimonin): simplified the retrieval of pools.
+    # before it acts as a join and rome doesn't ouput joins as sqlalchemy outputs
+    for result in model_query(context, models.FloatingIp.pool).distinct():
+        pools.append({'name': result})
     return pools
 
 
@@ -1246,12 +1250,14 @@ def _floating_ip_get_by_address(context, address):
 @require_context
 @wrapp_with_session
 def floating_ip_get_by_fixed_address(context, fixed_address):
-    return model_query(context, models.FloatingIp).\
+    #NOTE(disco/msimonin): handle join output from ROME
+    result = model_query(context, models.FloatingIp).\
                        outerjoin(models.FixedIp,
                                  models.FixedIp.id ==
                                  models.FloatingIp.fixed_ip_id).\
                        filter(models.FixedIp.address == fixed_address).\
                        all()
+    return [r[1] for r in result]
 
 
 @require_context
