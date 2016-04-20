@@ -2226,14 +2226,14 @@ class SecurityGroupTestCase(test.TestCase, ModelsObjectComparatorMixin):
             'instances': []
             }
 
-    def tearDown(self):
-        "Hook method for deconstructing the test fixture after testing it."
-        # super(SecurityGroupRuleTestCase, self).tearDown()
-        classes = [models.SecurityGroup]
-        for c in classes:
-            for o in Query(c).all():
-                o.delete()
-        pass
+    # def tearDown(self):
+    #     "Hook method for deconstructing the test fixture after testing it."
+    #     super(SecurityGroupRuleTestCase, self).tearDown()
+    #     classes = [models.SecurityGroup]
+    #     for c in classes:
+    #         for o in Query(c).all():
+    #             o.delete()
+    #     pass
 
 
     def _create_security_group(self, values):
