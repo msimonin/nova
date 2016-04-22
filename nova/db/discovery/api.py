@@ -1655,7 +1655,11 @@ def fixed_ips_by_virtual_interface(context, vif_id):
 @require_context
 @wrapp_with_session
 def fixed_ip_update(context, address, values):
-    _fixed_ip_get_by_address(context, address).update(values)
+   fixed_ip = _fixed_ip_get_by_address(context, address).update(values)
+   # NOTE(msimonin): add the following statement to persist to DB
+   # in sqlalchemy it is avoided with a proper use of transaction decorator
+   context.session.add(fixed_ip)
+
 
 
 def _fixed_ip_count_by_project(context, project_id):
